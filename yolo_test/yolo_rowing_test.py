@@ -1,5 +1,6 @@
 #run pip install -r requirements.txt
 import argparse
+import time
 import cv2
 import sys
 import numpy as np
@@ -40,12 +41,23 @@ def main(input_source):
     print("Loading YOLOv8 Pose model...")
     model = YOLO('yolov8n-pose.pt')
 
-    cap = cv2.VideoCapture(int(input_source) if input_source.isdigit() else input_source)
+    is_camera = input_source.isdigit()
+    cap = cv2.VideoCapture(int(input_source) if is_camera else input_source)
     if not cap.isOpened():
         sys.exit("Error: Could not open webcam.")
 
+    if is_camera:
+        cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*"MJPG"))
+        cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
+        cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
+        cap.set(cv2.CAP_PROP_FPS, 30)
+
     # Dictionary to maintain separate stroke detectors for each player ID
     player_detectors = {}
+
+    fps = 0.0
+    inference_ms = 0.0
+    prev_time = time.perf_counter()
 
     while cap.isOpened():
         ret, frame = cap.read()
@@ -53,7 +65,10 @@ def main(input_source):
             break
 
         frame = cv2.flip(frame, 1)
-        results = model.track(source=frame, persist=True, show=False, verbose=False)
+
+        t0 = time.perf_counter()
+        results = model.track(source=frame, persist=True, show=False, verbose=False, imgsz=480)
+        inference_ms = (time.perf_counter() - t0) * 1000.0
 
         for result in results:
             if result.boxes.id is not None and result.keypoints is not None:
@@ -80,6 +95,19 @@ def main(input_source):
                                     (px, py), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
 
         annotated_frame = results[0].plot()
+
+        now = time.perf_counter()
+        dt = now - prev_time
+        prev_time = now
+        if dt > 0:
+            instant_fps = 1.0 / dt
+            fps = instant_fps if fps == 0.0 else fps * 0.9 + instant_fps * 0.1
+
+        overlay = f"FPS: {fps:.1f} | Latency: {inference_ms:.1f} ms"
+        (text_w, _), _ = cv2.getTextSize(overlay, cv2.FONT_HERSHEY_SIMPLEX, 0.7, 2)
+        cv2.putText(annotated_frame, overlay, (annotated_frame.shape[1] - text_w - 10, 30),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 255), 2)
+
         cv2.imshow("Rowing Game - Motion Input Test", annotated_frame)
 
         if cv2.waitKey(1) & 0xFF == ord('q'):

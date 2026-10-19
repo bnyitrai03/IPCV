@@ -9,3 +9,9 @@ class Player:
 
     def get_direction(self) -> Direction:
         return self.input_scheme.get_direction()
+
+    def get_debug_info(self) -> str | None:
+        return self.input_scheme.get_debug_info()
+
+    def get_preview(self):
+        return self.input_scheme.get_preview()

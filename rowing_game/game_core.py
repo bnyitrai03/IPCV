@@ -246,6 +246,26 @@ class Game:
         score_font_hud = pygame.font.SysFont(None, 36)
         score_surface = score_font_hud.render(str(self.player.score), True, (25,25,25))
         self.screen.blit(score_surface, score_surface.get_rect(center=(box.centerx, box.y + 55)))
+
+        # Draw webcam/pose diagnostics in the top-right corner
+        debug_info = self.player.get_debug_info()
+        if debug_info:
+            debug_shadow = self.small_font.render(debug_info, True, (0, 0, 0))
+            debug_surface = self.small_font.render(debug_info, True, (255, 255, 255))
+            debug_x = SCREEN_WIDTH - debug_surface.get_width() - 10
+            self.screen.blit(debug_shadow, (debug_x + 1, 11))
+            self.screen.blit(debug_surface, (debug_x, 10))
+
+        # Draw camera preview with pose detections
+        preview = self.player.get_preview()
+        if preview is not None:
+            preview_h, preview_w = preview.shape[:2]
+            preview_surface = pygame.image.frombuffer(
+                preview.tobytes(), (preview_w, preview_h), "RGB")
+            preview_rect = preview_surface.get_rect(topright=(SCREEN_WIDTH - 10, 40))
+            pygame.draw.rect(self.screen, (0, 0, 0), preview_rect.inflate(8, 8), border_radius=4)
+            self.screen.blit(preview_surface, preview_rect)
+            pygame.draw.rect(self.screen, BTN_BG, preview_rect.inflate(8, 8), 2, border_radius=4)
         
         # Draw game over screen with personalized message
         if self.game_over:

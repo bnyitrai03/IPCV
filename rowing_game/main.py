@@ -1,6 +1,6 @@
 from .game_core import Game
 from .menu import Menu
-from .ble_gateway import BleGateway
+from .yolo_gateway import YoloGateway
 from .ble_message import Message
 import logging.config
 import yaml
@@ -12,9 +12,9 @@ logging.config.dictConfig(config)
 logger = logging.getLogger("root")
 
 def main():
-    #create and start ble
+    #create and start webcam pose tracking
     message = Message()
-    gateway = BleGateway(message)
+    gateway = YoloGateway(message)
     try:
         while True:
             menu = Menu(message)
@@ -28,16 +28,16 @@ def main():
                 game = Game(player, settings)
 
                 print("=== CANOE ROWING GAME ===")
-                print("Controls:")
-                print("  UP    = Both paddles (go UP)")
-                print("  LEFT  = Left paddle only (go UP and turn RIGHT)")
-                print("  RIGHT = Right paddle only (go UP and turn LEFT)")
-                print("  No key = Drift DOWN with current")
+                print("Controls (webcam pose tracking):")
+                print("  Pull BOTH hands = row forward (go UP)")
+                print("  Pull LEFT hand  = left paddle (turn RIGHT)")
+                print("  Pull RIGHT hand = right paddle (turn LEFT)")
+                print("  Hands extended  = drift DOWN with current")
                 print("\nGoal: Pass as many obstacles as possible to score points!")
                 print("Keep rowing... If you hit the bottom, you lose!")
                 print("\n  R = Restart (when game over)")
                 print("  Q = Quit to Application (or Exit to Menu when game over)")
-                print("open config (in theory it configures the sensors but for now press l and r to configure them and then the strat is open)")
+                print("open config (press w for webcam or k for keyboard, then start)")
                 print("=" * 50)
 
                 result = game.run()

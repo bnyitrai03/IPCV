@@ -9,6 +9,11 @@ class Message:
         self.LEFT = False
         self.RIGHT = False
         self.CONFIGURED = threading.Event()
+        # Webcam/pose backend diagnostics
+        self.fps = 0.0
+        self.inference_ms = 0.0
+        self.camera_ok = False
+        self.preview = None  # annotated camera frame as an RGB numpy array
         
     def get_direction(self) -> Direction:
         direction = "STOP"

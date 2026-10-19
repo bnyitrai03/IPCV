@@ -1,3 +1,5 @@
 pygame
-bleak
 PyYAML
+opencv-python
+ultralytics
+numpy
