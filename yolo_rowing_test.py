@@ -1,3 +1,4 @@
+#run pip install -r requirements.txt
 import argparse
 import cv2
 import sys
