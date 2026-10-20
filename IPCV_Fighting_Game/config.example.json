@@ -1,0 +1,14 @@
+{
+  "camera": {"index": 0, "width": 1280, "height": 720, "inference_width": 640},
+  "pose": {"model_file": "pose_landmarker_full.task", "num_poses": 2},
+  "face": {"num_faces": 2, "run_every_n_frames": 1},
+  "gestures": {
+    "punch_extend_ratio": 1.35,
+    "punch_retract_ratio": 1.05,
+    "punch_min_speed": 2.5,
+    "block_enter_dist": 0.85,
+    "special_hold_s": 0.35,
+    "move_dead_zone": 0.30
+  },
+  "game": {"round_time_s": 60, "rounds_to_win": 2, "fullscreen": false}
+}
