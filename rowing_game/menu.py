@@ -1,16 +1,14 @@
 # game/menu.py
 import pygame, os
 
-from rowing_game.input_schemes import BLEScheme, KeyboardScheme
+from rowing_game.input_schemes import KeyboardScheme
 from rowing_game.player import Player
 from .settings import *
-from .ble_message import Message
 
 BASE_DIR = os.path.dirname(__file__)
 
 class Menu:
-    def __init__(self, ble_message: Message, start_mode: str = "menu"):
-        self.ble_message = ble_message
+    def __init__(self, start_mode: str = "menu"):
         pygame.init()
         self.screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
         pygame.display.set_caption("Canoe Game - Menu")
@@ -88,114 +86,45 @@ class Menu:
             pass
 
     def configure_player(self):
-        configuring = True
-        selected_config = "NONE"
         player = None
-        buttons = {
-            "Paddles": pygame.Rect(SCREEN_WIDTH//4 - 100, 2*SCREEN_HEIGHT//3, 200, 50),
-            "Keyboard": pygame.Rect(3*SCREEN_WIDTH//4 - 100, 2*SCREEN_HEIGHT//3, 200, 50),
-        }
         selected_keys = []
 
-        while configuring:
+        while True:
             pygame.event.pump()
-                
+
             for event in pygame.event.get():
                 if event.type == pygame.QUIT:
                     return "quit", None
-                elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
-                    mouse_pos = pygame.mouse.get_pos()
-                    if buttons["Paddles"].collidepoint(mouse_pos):
-                        selected_config = "PADDLES"
-                    elif buttons["Keyboard"].collidepoint(mouse_pos):
-                        selected_config = "KEYBOARD"
                 elif event.type == pygame.KEYDOWN:
-                    if event.key == pygame.K_k and selected_config == "NONE":
-                        selected_config = "KEYBOARD"
-                    elif event.key == pygame.K_p and selected_config == "NONE":
-                        selected_config = "PADDLES"
-                    elif event.key == pygame.K_RETURN and player != None:
-                        return "start", player
-                    elif event.key == pygame.K_q:
+                    if event.key == pygame.K_q:
                         return "quit", None
-                    elif selected_config == "KEYBOARD":
+                    elif event.key == pygame.K_RETURN and player is not None:
+                        return "start", player
+                    elif event.key != pygame.K_RETURN and len(selected_keys) < 2:
                         selected_keys.append(event.key)
+                        if len(selected_keys) == 2:
+                            player = Player(KeyboardScheme(selected_keys[0], selected_keys[1]))
 
             self.screen.blit(self.menu_bg, (0, 0))
 
-            match(selected_config):
-                case("NONE"):
-                    # Create semi-transparent background box for text
-                    text_box = pygame.Surface((700, 200), pygame.SRCALPHA)
-                    text_box.fill((0, 0, 0, 180))
-                    self.screen.blit(text_box, ((SCREEN_WIDTH - 700)//2, SCREEN_HEIGHT//3 - 60))
+            # Create semi-transparent background box for text
+            text_box = pygame.Surface((700, 150), pygame.SRCALPHA)
+            text_box.fill((0, 0, 0, 180))
+            self.screen.blit(text_box, ((SCREEN_WIDTH - 700)//2, SCREEN_HEIGHT//3 - 40))
 
-                    t0 = self.config_font.render("Choose how to play:", True, (255, 255, 255))
-                    t1 = self.config_font.render("To play with paddles, press p.", True, (255, 255, 255))
-                    t2 = self.config_font.render("To play with a keyboard, press k.", True, (255, 255, 255))
-                    self.screen.blit(t0, (SCREEN_WIDTH//2 - t0.get_width()//2, SCREEN_HEIGHT//3 - 30))
-                    self.screen.blit(t1, (SCREEN_WIDTH//2 - t1.get_width()//2, SCREEN_HEIGHT//3 + 20))
-                    self.screen.blit(t2, (SCREEN_WIDTH//2 - t2.get_width()//2, SCREEN_HEIGHT//3 + 70))
-
-                    # Draw buttons using new style
-                    for key, rect in buttons.items():
-                        pygame.draw.rect(self.screen, BTN_BG, rect, border_radius=14)
-                        pygame.draw.rect(self.screen, BTN_OUT, rect, 2, border_radius=14)
-                        text = self.font.render(key, True, (25,25,25))
-                        text_rect = text.get_rect(center=rect.center)
-                        self.screen.blit(text, text_rect)
-                case("PADDLES"):
-                    if player == None:
-                        player = Player(BLEScheme(self.ble_message))
-
-                    # Create semi-transparent background box for text
-                    text_box = pygame.Surface((700, 220), pygame.SRCALPHA)
-                    text_box.fill((0, 0, 0, 180))
-                    self.screen.blit(text_box, ((SCREEN_WIDTH - 700)//2, SCREEN_HEIGHT//3 - 60))
-
-                    t0 = self.config_font.render("Row with the left paddle to activate", True, (255, 255, 255))
-                    t1 = self.config_font.render("the red circle or the right paddle", True, (255, 255, 255))
-                    t2 = self.config_font.render("to activate the blue circle.", True, (255, 255, 255))
-                    t3 = self.config_font.render("To continue, press ENTER.", True, (255, 255, 120))
-                    self.screen.blit(t0, (SCREEN_WIDTH//2 - t0.get_width()//2, SCREEN_HEIGHT//3 - 30))
-                    self.screen.blit(t1, (SCREEN_WIDTH//2 - t1.get_width()//2, SCREEN_HEIGHT//3 + 10))
-                    self.screen.blit(t2, (SCREEN_WIDTH//2 - t2.get_width()//2, SCREEN_HEIGHT//3 + 50))
-                    self.screen.blit(t3, (SCREEN_WIDTH//2 - t3.get_width()//2, SCREEN_HEIGHT//3 + 100))
-
-                    left_ok  = bool(self.ble_message.LEFT)
-                    right_ok = bool(self.ble_message.RIGHT)
-
-                    # Circles: at the start they are greyish and after configuring they are red and blue
-                    pygame.draw.circle(self.screen, (200, 0, 0) if left_ok else (100, 100, 100),
-                                    (SCREEN_WIDTH//2 - 120, SCREEN_HEIGHT//2 + 80), 35)
-                    ltxt = self.config_font.render("Left (Red)", True, (255, 255, 255))
-                    self.screen.blit(ltxt, (SCREEN_WIDTH//2 - 180, SCREEN_HEIGHT//2 + 130))
-
-                    pygame.draw.circle(self.screen, (0, 0, 200) if right_ok else (100, 100, 100),
-                                    (SCREEN_WIDTH//2 + 120, SCREEN_HEIGHT//2 + 80), 35)
-                    rtxt = self.config_font.render("Right (Blue)", True, (255, 255, 255))
-                    self.screen.blit(rtxt, (SCREEN_WIDTH//2 + 50, SCREEN_HEIGHT//2 + 130))
-                case("KEYBOARD"):
-                    # Create semi-transparent background box for text
-                    text_box = pygame.Surface((700, 150), pygame.SRCALPHA)
-                    text_box.fill((0, 0, 0, 180))
-                    self.screen.blit(text_box, ((SCREEN_WIDTH - 700)//2, SCREEN_HEIGHT//3 - 40))
-
-                    if len(selected_keys) == 0:
-                        t1 = self.config_font.render("Press a key (except for q)", True, (255, 255, 255))
-                        t2 = self.config_font.render("to use as the left paddle.", True, (255, 255, 255))
-                        self.screen.blit(t1, (SCREEN_WIDTH//2 - t1.get_width()//2, SCREEN_HEIGHT//3))
-                        self.screen.blit(t2, (SCREEN_WIDTH//2 - t2.get_width()//2, SCREEN_HEIGHT//3 + 45))
-                    elif len(selected_keys) == 1:
-                        t1 = self.config_font.render("Press a key (except for q)", True, (255, 255, 255))
-                        t2 = self.config_font.render("to use as the right paddle.", True, (255, 255, 255))
-                        self.screen.blit(t1, (SCREEN_WIDTH//2 - t1.get_width()//2, SCREEN_HEIGHT//3))
-                        self.screen.blit(t2, (SCREEN_WIDTH//2 - t2.get_width()//2, SCREEN_HEIGHT//3 + 45))
-                    else:
-                        if (player == None):
-                            player = Player(KeyboardScheme(selected_keys[0], selected_keys[1]))
-                        t1 = self.config_font.render("To continue, press ENTER.", True, (255, 255, 120))
-                        self.screen.blit(t1, (SCREEN_WIDTH//2 - t1.get_width()//2, SCREEN_HEIGHT//3 + 20))
+            if len(selected_keys) == 0:
+                t1 = self.config_font.render("Press a key (except for q)", True, (255, 255, 255))
+                t2 = self.config_font.render("to use as the left paddle.", True, (255, 255, 255))
+                self.screen.blit(t1, (SCREEN_WIDTH//2 - t1.get_width()//2, SCREEN_HEIGHT//3))
+                self.screen.blit(t2, (SCREEN_WIDTH//2 - t2.get_width()//2, SCREEN_HEIGHT//3 + 45))
+            elif len(selected_keys) == 1:
+                t1 = self.config_font.render("Press a key (except for q)", True, (255, 255, 255))
+                t2 = self.config_font.render("to use as the right paddle.", True, (255, 255, 255))
+                self.screen.blit(t1, (SCREEN_WIDTH//2 - t1.get_width()//2, SCREEN_HEIGHT//3))
+                self.screen.blit(t2, (SCREEN_WIDTH//2 - t2.get_width()//2, SCREEN_HEIGHT//3 + 45))
+            else:
+                t1 = self.config_font.render("To continue, press ENTER.", True, (255, 255, 120))
+                self.screen.blit(t1, (SCREEN_WIDTH//2 - t1.get_width()//2, SCREEN_HEIGHT//3 + 20))
 
             pygame.display.flip()
             self.clock.tick(30)

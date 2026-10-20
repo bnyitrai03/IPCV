@@ -1,7 +1,5 @@
 from .game_core import Game
 from .menu import Menu
-from .ble_gateway import BleGateway
-from .ble_message import Message
 import logging.config
 import yaml
 import pygame
@@ -12,12 +10,9 @@ logging.config.dictConfig(config)
 logger = logging.getLogger("root")
 
 def main():
-    #create and start ble
-    message = Message()
-    gateway = BleGateway(message)
     try:
         while True:
-            menu = Menu(message)
+            menu = Menu()
             choice, player = menu.run()
             #message from menu quit or start so it quits and starts from main
             if choice == "quit":
@@ -37,7 +32,6 @@ def main():
                 print("Keep rowing... If you hit the bottom, you lose!")
                 print("\n  R = Restart (when game over)")
                 print("  Q = Quit to Application (or Exit to Menu when game over)")
-                print("open config (in theory it configures the sensors but for now press l and r to configure them and then the strat is open)")
                 print("=" * 50)
 
                 result = game.run()
@@ -49,7 +43,6 @@ def main():
                 # (this happens when user presses E on game over screen)
 
     finally:
-        gateway.stop()
         pygame.quit()
 
 if __name__ == "__main__":
