@@ -4,13 +4,13 @@ import pygame, os
 from rowing_game.input_schemes import YoloScheme, KeyboardScheme
 from rowing_game.player import Player
 from .settings import *
-from .ble_message import Message
+from .message import Message
 
 BASE_DIR = os.path.dirname(__file__)
 
 class Menu:
-    def __init__(self, ble_message: Message, start_mode: str = "menu"):
-        self.ble_message = ble_message
+    def __init__(self, message: Message, start_mode: str = "menu"):
+        self.message = message
         pygame.init()
         self.screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
         pygame.display.set_caption("Canoe Game - Menu")
@@ -146,7 +146,7 @@ class Menu:
                         self.screen.blit(text, text_rect)
                 case("WEBCAM"):
                     if player == None:
-                        player = Player(YoloScheme(self.ble_message))
+                        player = Player(YoloScheme(self.message))
 
                     # Create semi-transparent background box for text
                     text_box = pygame.Surface((700, 220), pygame.SRCALPHA)
@@ -162,7 +162,7 @@ class Menu:
                     self.screen.blit(t2, (SCREEN_WIDTH//2 - t2.get_width()//2, SCREEN_HEIGHT//3 + 50))
                     self.screen.blit(t3, (SCREEN_WIDTH//2 - t3.get_width()//2, SCREEN_HEIGHT//3 + 100))
 
-                    if self.ble_message.camera_ok:
+                    if self.message.camera_ok:
                         status, status_color = "Camera connected", (120, 255, 120)
                     else:
                         status, status_color = "Waiting for camera...", (255, 190, 80)
@@ -170,8 +170,8 @@ class Menu:
                     self.screen.blit(status_surface, status_surface.get_rect(
                         center=(SCREEN_WIDTH//2, SCREEN_HEIGHT//3 + 145)))
 
-                    left_ok  = bool(self.ble_message.LEFT)
-                    right_ok = bool(self.ble_message.RIGHT)
+                    left_ok  = bool(self.message.LEFT)
+                    right_ok = bool(self.message.RIGHT)
 
                     # Circles: at the start they are greyish and after configuring they are red and blue
                     pygame.draw.circle(self.screen, (200, 0, 0) if left_ok else (100, 100, 100),

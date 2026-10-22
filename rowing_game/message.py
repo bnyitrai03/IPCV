@@ -2,7 +2,7 @@ import logging
 import threading
 from rowing_game.direction import Direction
 
-logger = logging.getLogger("ble_message")
+logger = logging.getLogger("message")
 
 class Message:
     def __init__(self):

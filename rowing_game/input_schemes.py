@@ -1,5 +1,5 @@
 import pygame
-from rowing_game.ble_message import Message
+from rowing_game.message import Message
 from rowing_game.direction import Direction
 
 class InputScheme:

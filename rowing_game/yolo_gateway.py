@@ -9,7 +9,7 @@ import cv2
 import numpy as np
 from ultralytics import YOLO
 
-from .ble_message import Message
+from .message import Message
 
 logger = logging.getLogger("yolo_gateway")
 
@@ -69,7 +69,7 @@ def open_camera(camera_index):
 
 
 class YoloGateway:
-    """Webcam pose backend that replaces the BLE paddle input.
+    """Webcam pose backend for paddle input.
 
     Inference runs in a separate process: the pygame loop keeps its own GIL
     and is not slowed down by the model, and the model is not starved by the

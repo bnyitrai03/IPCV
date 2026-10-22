@@ -1,7 +1,7 @@
 from .game_core import Game
 from .menu import Menu
 from .yolo_gateway import YoloGateway
-from .ble_message import Message
+from .message import Message
 import logging.config
 import yaml
 import pygame
