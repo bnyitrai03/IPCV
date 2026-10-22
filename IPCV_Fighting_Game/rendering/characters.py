@@ -69,6 +69,7 @@ class FighterRenderer:
         self.style = style
         self.animator = Animator()
         self.flash = 0.0
+        self.joints: dict[str, tuple[float, float]] = {}
 
     def _col(self, c: Color) -> Color:
         return _mix(c, (255, 255, 255), self.flash) if self.flash > 0 else c
@@ -83,6 +84,7 @@ class FighterRenderer:
         ox, oy = f.x + offset[0], f.ground_y + offset[1]
         fx = f.facing
         P = {j: (ox + fx * x, oy + y) for j, (x, y) in pose.items()}
+        self.joints = P          # screen positions, used for attack trails
         s = self.style
         O = s.outline
 

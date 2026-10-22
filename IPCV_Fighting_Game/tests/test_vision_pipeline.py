@@ -11,9 +11,8 @@ import numpy as np
 
 from config import Config
 from vision.face_tracking import FaceStatus, compute_face_geometry
-from vision.gesture_recognition import GestureRecognizer
 from vision.player_tracking import PlayerTracker, TrackState
-from vision.pose_tracking import L_SHOULDER, L_WRIST, NOSE, R_SHOULDER, R_WRIST, PlayerPose, PoseDetection
+from vision.pose_tracking import NOSE
 from vision.smoothing import AngleFilter, LandmarkSmoother, OneEuroFilter
 from vision.synthetic import EXPECTED_EVENTS, SCENARIO_LENGTH, SyntheticScenario
 
@@ -64,66 +63,6 @@ def test_landmark_smoother_holds_then_invalidates():
     assert not sm.valid[1] and np.isnan(sm.value[1]).all()         # expired
     sm.update(np.array([[0, 0], [0.5, 0.5]]), np.array([1.0, 1.0]), 0.6)
     assert sm.valid[1] and sm.recoveries == 1
-
-
-def _pose_with(wrist_offsets, t_world_z=0.0):
-    """Static pose; wrist offsets in shoulder widths relative to each shoulder."""
-    img = np.full((33, 4), 0.0)
-    img[:, 3] = 0.95
-    sw = 0.13
-    aspect = 16 / 9
-    def put(i, x, y):
-        img[i, 0], img[i, 1] = x, y * aspect
-    put(L_SHOULDER, 0.4, 0.4); put(R_SHOULDER, 0.4 + sw, 0.4)
-    put(NOSE, 0.4 + sw / 2, 0.4 - 0.6 * sw)
-    for idx, s_idx in ((L_WRIST, L_SHOULDER), (R_WRIST, R_SHOULDER)):
-        dx, dy = wrist_offsets[idx]
-        put(idx, img[s_idx, 0] + dx * sw, img[s_idx, 1] / aspect + dy * sw)
-    for i in (13, 14):   # elbows halfway
-        img[i, :2] = (img[i + 2, :2] + img[i - 2, :2]) / 2
-    for i in (23, 24):
-        put(i, img[i - 12, 0], img[i - 12, 1] / aspect + 1.5 * sw)
-    return PoseDetection(img, None)
-
-
-def test_punch_fires_once_while_arm_stays_extended():
-    cfg = Config()
-    pose = PlayerPose(cfg.pose, 16 / 9)
-    rec = GestureRecognizer(0, cfg.gestures)
-    rest = {L_WRIST: (0.2, 0.55), R_WRIST: (-0.2, 0.55)}
-    ext = {L_WRIST: (-1.6, 0.0), R_WRIST: (-0.2, 0.55)}   # left arm out sideways
-    events = []
-    t = 0.0
-    for k in range(10):
-        pose.update(_pose_with(rest), t); events += rec.update(pose, t, t); t += 1 / 30
-    for k in range(60):   # extend quickly, then HOLD for 2 s
-        frac = min(1.0, (k + 1) / 4)
-        cur = {L_WRIST: tuple(np.add(rest[L_WRIST], frac * (np.subtract(ext[L_WRIST], rest[L_WRIST])))),
-               R_WRIST: rest[R_WRIST]}
-        pose.update(_pose_with(cur), t); events += rec.update(pose, t, t); t += 1 / 30
-    punches = [e for e in events if e.gesture.startswith("punch")]
-    assert [e.gesture for e in punches] == ["punch_left"], punches
-    # Retract and punch again -> second event.
-    for k in range(15):
-        pose.update(_pose_with(rest), t); events += rec.update(pose, t, t); t += 1 / 30
-    for k in range(10):
-        frac = min(1.0, (k + 1) / 4)
-        cur = {L_WRIST: tuple(np.add(rest[L_WRIST], frac * (np.subtract(ext[L_WRIST], rest[L_WRIST])))),
-               R_WRIST: rest[R_WRIST]}
-        pose.update(_pose_with(cur), t); events += rec.update(pose, t, t); t += 1 / 30
-    assert len([e for e in events if e.gesture == "punch_left"]) == 2
-
-
-def test_slow_reach_does_not_fire():
-    cfg = Config()
-    pose = PlayerPose(cfg.pose, 16 / 9)
-    rec = GestureRecognizer(0, cfg.gestures)
-    rest = np.array([0.2, 0.55]); ext = np.array([-1.6, 0.0])
-    events, t = [], 0.0
-    for k in range(90):  # 3 seconds to extend
-        cur = {L_WRIST: tuple(rest + (ext - rest) * min(1, k / 90)), R_WRIST: (-0.2, 0.55)}
-        pose.update(_pose_with(cur), t); events += rec.update(pose, t, t); t += 1 / 30
-    assert not [e for e in events if e.gesture.startswith("punch")]
 
 
 def test_scenario_registers_and_preserves_identity_through_crossing():
@@ -213,3 +152,23 @@ def test_gesture_trial_runner_scores_prompts():
         runner.on_gesture(GestureEvent(0, tr.gesture, now + 0.5, now + 0.4, now + 0.55))
     runner.update(now + tr.duration + 0.01)
     assert runner.results and runner.results[0]["correct"] == 1
+
+
+def test_single_player_registers_alone_and_second_joins_later():
+    """One person alone must become P1; a second person arriving later becomes P2."""
+    cfg = Config()
+    scen = SyntheticScenario(seed=5)
+    tracker = PlayerTracker(cfg, scen.aspect)
+    for k in range(60):                       # 2 s with only person A visible
+        t = k / FPS
+        image, poses, faces = scen.frame(t)
+        a_only = [p for p in poses if p.center()[0] < 0.5]
+        tracker.update(a_only, faces[:1], image, t, t)
+    assert tracker.tracks[0].state == TrackState.ACTIVE
+    assert not tracker.tracks[1].registered
+    for k in range(60, 120):                  # B steps in
+        t = k / FPS
+        image, poses, faces = scen.frame(t)
+        tracker.update(poses, faces, image, t, t)
+    assert tracker.tracks[1].state == TrackState.ACTIVE
+    assert tracker.tracks[0].center[0] < tracker.tracks[1].center[0]

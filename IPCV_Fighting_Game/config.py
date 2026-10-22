@@ -5,7 +5,7 @@ overridden without editing code by placing a ``config.json`` next to this
 file (or passing ``--config path.json``), e.g.::
 
     {"camera": {"index": 1, "width": 1280, "height": 720},
-     "gestures": {"punch_extend_ratio": 1.3}}
+     "gestures": {"hook_min_dx": 0.5}}
 
 Paths are always resolved relative to the project root, never absolute.
 """
@@ -99,11 +99,26 @@ class TrackingConfig:
 
 @dataclass
 class GestureConfig:
-    # Punch: arm reach (wrist-shoulder distance / shoulder width).
-    punch_extend_ratio: float = 1.35
-    punch_retract_ratio: float = 1.05
-    punch_min_speed: float = 2.5         # shoulder widths per second
-    punch_cooldown_s: float = 0.30
+    # All distances in shoulder widths (sw), speeds in sw per second.
+    # --- shared attack motion ---
+    strike_onset_speed: float = 1.5      # fist speed that starts a motion window
+    attack_min_speed: float = 2.5        # average fist speed over the attack
+    attack_cooldown_s: float = 0.30      # per arm, after an attack
+    rearm_dist: float = 0.6              # fist back this close to where the attack started...
+    rearm_reach: float = 0.9             # ...or arm pulled in (wrist-shoulder < this)
+    # --- hook: elbow bent ~90 deg, fast horizontal sweep towards/across the body ---
+    hook_min_dx: float = 0.6             # inward travel from the furthest-out wind-up point
+    hook_dominance: float = 1.0          # inward travel must exceed |dy| * this
+    hook_window_s: float = 0.6           # how far back to look for the wind-up point
+    hook_max_duration_s: float = 0.4     # wind-up point -> now must be this fast
+    hook_min_elbow_deg: float = 50.0     # elbow angle range (180 = straight arm)
+    hook_max_elbow_deg: float = 130.0
+    # --- uppercut: one fist up and forward, ending at head height ---
+    uppercut_min_rise: float = 0.8
+    uppercut_end_below_nose: float = 0.15   # fist must end no lower than this below the nose
+    uppercut_min_reach: float = 0.95     # arm reaches out (a guard hand by the face does not)
+    uppercut_confirm_s: float = 0.12     # wait to make sure it is not a two-arm raise
+    uppercut_max_duration_s: float = 0.4 # start of the rise -> now must be this fast
     # Block: wrists within this many shoulder widths of the nose.
     block_enter_dist: float = 0.85
     block_exit_dist: float = 1.05
@@ -133,7 +148,6 @@ class GameConfig:
     energy_per_hit: float = 8.0
     special_cost: float = 50.0
     walk_speed: float = 260.0            # px/s
-    punch_damage: float = 6.0
     special_damage: float = 18.0
     block_damage_factor: float = 0.15    # chip damage while blocking
     input_buffer_s: float = 0.15

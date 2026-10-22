@@ -37,10 +37,10 @@ class SimpleAI:
                 inp.special = True
                 self.cooldown = 1.0
             elif dist < 145 and self.rng.random() < self.aggression:
-                if self.rng.random() < 0.5:
-                    inp.punch_left = True
-                else:
-                    inp.punch_right = True
+                r = self.rng.random()
+                side = "left" if self.rng.random() < 0.5 else "right"
+                kind = "hook" if r < 0.7 or dist > 130 else "uppercut"   # uppercut = shorter
+                setattr(inp, f"{kind}_{side}", True)
                 self.cooldown = self.rng.uniform(0.25, 0.7)
             else:
                 self.cooldown = 0.15

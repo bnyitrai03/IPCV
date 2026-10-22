@@ -31,8 +31,10 @@ import numpy as np
 from evaluation.session import Session
 from vision.gesture_recognition import GestureEvent
 
-ATTACK_GESTURES = ("punch_left", "punch_right", "block_start", "special")
-GESTURE_LABEL = {"punch_left": "LEFT PUNCH", "punch_right": "RIGHT PUNCH",
+ATTACK_GESTURES = ("hook_left", "hook_right",
+                   "uppercut_left", "uppercut_right", "block_start", "special")
+GESTURE_LABEL = {                 "hook_left": "LEFT HOOK (elbow 90°)", "hook_right": "RIGHT HOOK (elbow 90°)",
+                 "uppercut_left": "LEFT UPPERCUT (up & forward)", "uppercut_right": "RIGHT UPPERCUT (up & forward)",
                  "block_start": "BLOCK (hands to face)", "special": "SPECIAL (arms up, hold)",
                  "idle": "STAY IDLE / MOVE, NO ATTACKS", "move_left": "STEP LEFT",
                  "move_right": "STEP RIGHT"}
@@ -73,19 +75,19 @@ class GestureTrialRunner:
               "response_ms", "recognition_latency_ms", "wrong_detections", "duration_s"]
 
     def __init__(self, session: Session | None, players: tuple[int, ...] = (0, 1),
-                 repeats: int = 5, seed: int | None = None) -> None:
+                 repeats: int = 3, seed: int | None = None) -> None:
         self.session = session
         self.writer = session.writer("gesture_trials", self.HEADER) if session else None
         rng = random.Random(seed)
         trials: list[Trial] = []
-        gestures = ["punch_left", "punch_right", "block_start", "special"]
+        gestures = list(ATTACK_GESTURES)
         for _ in range(repeats):
             block = []
             for g in gestures:
                 for p in players:
                     block.append(((p,), g))
             if len(players) > 1:
-                block.append((tuple(players), rng.choice(["punch_left", "punch_right"])))
+                block.append((tuple(players), rng.choice(["hook_left", "hook_right"])))
             block.append((tuple(players), "idle"))
             rng.shuffle(block)
             trials += [Trial(0, ps, g, duration=6.0 if g == "idle" else 2.5) for ps, g in block]
@@ -203,7 +205,7 @@ def analyze_gestures(session_dir: Path) -> dict:
                     stats[f"{key}_mean"] = float(vals.mean())
                     stats[f"{key}_p95"] = float(np.percentile(vals, 95))
             out[f"latency_{gname}"] = stats
-        executed = [r for r in g if r["gesture"] in ("punch_left", "punch_right", "special")]
+        executed = [r for r in g if r["gesture"] not in ("block_start", "block_end")]
         if executed:
             out["executed_by_fighter_pct"] = float(
                 np.mean([r["game_result"] == "executed" for r in executed]) * 100)

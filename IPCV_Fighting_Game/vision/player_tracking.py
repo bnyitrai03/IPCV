@@ -372,13 +372,18 @@ class PlayerTracker:
         if not unregistered:
             return
         good = [i for i in leftovers if infos[i].n_key_visible >= 3]
-        needed = min(len(unregistered), 2) if not any(tr.registered for tr in self.tracks) else 1
-        if len(good) >= needed:
-            self._registration_count += 1
-        else:
+        if not good:
             self._registration_count = 0
             return
-        if self._registration_count < self.tcfg.registration_frames:
+        self._registration_count += 1
+        anyone_registered = any(tr.registered for tr in self.tracks)
+        if not anyone_registered and len(good) < len(unregistered):
+            # Only one person in view: wait a bit longer in case a second player is
+            # stepping in (so both get registered left->right), then register the
+            # single player as P1. A second player who arrives later becomes P2.
+            if self._registration_count < 2 * self.tcfg.registration_frames:
+                return
+        elif self._registration_count < self.tcfg.registration_frames:
             return
         # Left-to-right ordering is used ONLY here, at registration time.
         good.sort(key=lambda i: infos[i].center[0])

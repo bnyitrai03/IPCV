@@ -352,8 +352,11 @@ def draw_debug(surf: pygame.Surface, snap: VisionSnapshot | None, perf_lines: li
                 f" off {p.move_offset:+.2f}")
         text(surf, line, 20, (rect.left + 10, y), (255, 230, 160), "topleft", outline=0)
         y += 18
-        line = (f"   reachL {s.get('reach_left', float('nan')):.2f} rateL {s.get('rate_left', 0):+.1f}"
-                f"  reachR {s.get('reach_right', float('nan')):.2f} rateR {s.get('rate_right', 0):+.1f}")
+        st = {0.0: "armed", 2.0: "recover"}
+        line = (f"   L {st.get(s.get('state_left'), '-'):<7} elbow {s.get('elbow_left', float('nan')):3.0f}"
+                f" hook {s.get('hook_left', 0.0):+.2f} rise {s.get('rise_left', 0.0):+.2f}"
+                f"   R {st.get(s.get('state_right'), '-'):<7} elbow {s.get('elbow_right', float('nan')):3.0f}"
+                f" hook {s.get('hook_right', 0.0):+.2f} rise {s.get('rise_right', 0.0):+.2f}")
         text(surf, line, 20, (rect.left + 10, y), (230, 230, 230), "topleft", outline=0)
         y += 18
         line = (f"   block {s.get('block_dist', float('nan')):.2f} raise {s.get('raise', float('nan')):+.2f}"

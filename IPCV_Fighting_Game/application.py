@@ -24,7 +24,7 @@ from evaluation.performance import PerformanceMonitor
 from evaluation.session import Session
 from evaluation.tracking_metrics import TrackingLogger
 from game.ai import SimpleAI
-from game.controls import KeyboardController, PlayerInput
+from game.controls import ONE_SHOT_ACTIONS, KeyboardController, PlayerInput, key_is
 from game.fighter import SPECIAL_CHARGE, FighterState
 from game.game_state import GameState, Phase
 from rendering.arena import Arena
@@ -49,8 +49,10 @@ class Scene(Enum):
     GESTURE_TEST = auto()
 
 
-MENU_ITEMS = [("webcam", "FIGHT  -  WEBCAM CONTROL"), ("keyboard", "FIGHT  -  KEYBOARD"),
-              ("cpu", "PRACTICE  -  VS CPU"), ("gesture_test", "GESTURE TEST (EVALUATION)"),
+MENU_ITEMS = [("webcam", "FIGHT  -  WEBCAM CONTROL"),
+              ("webcam_cpu", "SOLO  -  WEBCAM VS CPU"),
+              ("keyboard", "FIGHT  -  KEYBOARD"),
+              ("cpu", "PRACTICE  -  KEYBOARD VS CPU"), ("gesture_test", "GESTURE TEST (EVALUATION)"),
               ("quit", "QUIT")]
 
 
@@ -152,6 +154,9 @@ class App:
         except VisionError as exc:
             self.vision_error = str(exc)
             log.error("Webcam control unavailable: %s", exc)
+            print("\n" + "=" * 70 + "\nWEBCAM MODE COULD NOT START:\n  " + str(exc) +
+                  "\nRun:  python scripts/check_setup.py   to find and fix the problem.\n" + "=" * 70,
+                  flush=True)
             return False
         self.vision = vp
         self.vision_error = None
@@ -165,6 +170,7 @@ class App:
         self.hud.reset()
         self.effects.clear()
         self.paused = False
+        self.keyboard.reset()
         self.scene = Scene.FIGHT
         self.pending = [PlayerInput(), PlayerInput()]
         if self.vision:
@@ -241,11 +247,12 @@ class App:
             self._start_fight(use_vision=False)
         elif item == "cpu":
             self._start_fight(use_vision=False, cpu=True)
-        elif item in ("webcam", "gesture_test"):
+        elif item in ("webcam", "webcam_cpu", "gesture_test"):
             if item == "gesture_test":
                 self._open_session("gesture_test")
+            self.calib_vs_cpu = item == "webcam_cpu"
             if self._ensure_vision():
-                self.after_calibration = Scene.FIGHT if item == "webcam" else Scene.GESTURE_TEST
+                self.after_calibration = Scene.GESTURE_TEST if item == "gesture_test" else Scene.FIGHT
                 self.scene = Scene.CALIBRATION
                 self.calib_ready_since = None
 
@@ -253,6 +260,9 @@ class App:
         if event.type == pygame.QUIT:
             self.running = False
             return
+        # Every key event (down AND up) goes to the keyboard controller so held
+        # keys (walk, block) are tracked correctly in every scene.
+        self.keyboard.handle_event(event)
         if event.type != pygame.KEYDOWN:
             return
         key = event.key
@@ -265,9 +275,9 @@ class App:
             self._annotate(key)
 
         if self.scene == Scene.MENU:
-            if key in (pygame.K_UP, pygame.K_w):
+            if key == pygame.K_UP or key_is(event, "W"):
                 self.menu_index = (self.menu_index - 1) % len(MENU_ITEMS)
-            elif key in (pygame.K_DOWN, pygame.K_s):
+            elif key == pygame.K_DOWN or key_is(event, "S"):
                 self.menu_index = (self.menu_index + 1) % len(MENU_ITEMS)
             elif key in (pygame.K_RETURN, pygame.K_SPACE):
                 self._activate(MENU_ITEMS[self.menu_index][0])
@@ -276,7 +286,7 @@ class App:
         elif self.scene == Scene.CALIBRATION:
             if key == pygame.K_ESCAPE:
                 self.scene = Scene.MENU
-            elif key == pygame.K_r and self.vision:
+            elif key_is(event, "R") and self.vision:
                 self.vision.request("reregister")
                 self.calib_ready_since = None
             elif key == pygame.K_RETURN:
@@ -286,7 +296,6 @@ class App:
                 self.trials = None
                 self.scene = Scene.MENU
         elif self.scene == Scene.FIGHT:
-            self.keyboard.handle_event(event)
             if self.paused:
                 if key in (pygame.K_UP, pygame.K_DOWN):
                     self.pause_index = (self.pause_index + (1 if key == pygame.K_DOWN else -1)) % 3
@@ -307,7 +316,7 @@ class App:
                     self.paused, self.pause_index = True, 0
             elif key == pygame.K_RETURN and self.state.phase == Phase.MATCH_OVER:
                 self._start_fight(self.use_vision, bool(self.cpu_players))
-            elif key == pygame.K_c and self.vision:
+            elif key_is(event, "C") and self.vision:
                 self.vision.request("recalibrate")
                 self.banner.show("RECALIBRATED", 0.8, color=GOLD)
 
@@ -342,7 +351,7 @@ class App:
             self.pending[pid].block = inp.block
         for ev in events:
             pid = ev.player_id
-            if ev.gesture in ("punch_left", "punch_right", "special"):
+            if ev.gesture in ONE_SHOT_ACTIONS:
                 vi = PlayerInput(**{ev.gesture: True})
                 vi.source_ts[ev.gesture] = ev.capture_ts
                 self.pending[pid] = self.pending[pid].merge(vi)
@@ -390,7 +399,7 @@ class App:
                 self.sound.play("bell")
             elif e.kind == "fight":
                 self.banner.show("FIGHT!", 0.9, color=(255, 90, 60))
-            elif e.kind == "action" and d["action"] in ("punch_left", "punch_right"):
+            elif e.kind == "action" and d["action"].split("_")[0] in ("hook", "uppercut"):
                 self.sound.play("whoosh")
             elif e.kind == "action" and d["action"] == "special_denied":
                 f = self.state.fighters[d["player"]]
@@ -402,13 +411,19 @@ class App:
                 atk = d["attacker"]
                 blocked = e.kind == "block"
                 color = STYLES[atk].accent
-                strength = 1.6 if d["attack"] == "special" else 1.0
+                strength = {"special": 1.6, "uppercut": 1.4, "hook": 1.15}.get(
+                    d["attack"].split("_")[0], 1.0)
                 self.effects.impact(d["x"], d["y"], color, strength, blocked)
                 self.sound.play("block" if blocked else "hit")
                 if not blocked:
                     self.hit_flash[d["defender"]] = 1.0
                     self.arena.pulse(0.25 * strength)
                     self.effects.text(f"-{d['damage']:.0f}", d["x"], d["y"] - 30, (255, 240, 120), 34)
+                    if d["attack"].startswith("uppercut"):
+                        self.effects.text("UPPERCUT!", d["x"], d["y"] - 100, (255, 200, 60), 44, 0.9)
+                        self.effects.shake(9, 0.25)
+                    elif d["attack"].startswith("hook"):
+                        self.effects.text("HOOK!", d["x"], d["y"] - 100, (255, 230, 120), 38, 0.7)
                     if d["counter"]:
                         self.effects.text("COUNTER!", d["x"], d["y"] - 70, (255, 120, 60), 40, 1.0)
                     if d["combo"] >= 2:
@@ -456,7 +471,10 @@ class App:
         snap = self.vision.snapshot() if self.vision else None
         if self.vision and self.vision.error:
             self.vision_error = self.vision.error
-        if snap and snap.registered:
+        solo = getattr(self, "calib_vs_cpu", False)
+        ready = snap is not None and (snap.registered or (
+            solo and snap.players[0].state == TrackState.ACTIVE))
+        if ready:
             if self.calib_ready_since is None:
                 self.calib_ready_since = time.perf_counter()
             elif time.perf_counter() - self.calib_ready_since > 2.5:
@@ -472,7 +490,7 @@ class App:
             self.trials = GestureTrialRunner(self.session)
             self.scene = Scene.GESTURE_TEST
         else:
-            self._start_fight(use_vision=True)
+            self._start_fight(use_vision=True, cpu=getattr(self, "calib_vs_cpu", False))
 
     # ------------------------------------------------------------- render
     def _render(self, dt: float) -> None:
@@ -510,10 +528,29 @@ class App:
         fighters = sorted(self.state.fighters, key=lambda f: f.state in (FighterState.PUNCH,
                                                                          FighterState.SPECIAL))
         for f in fighters:
-            self.renderers[f.player_id].draw(surf, f, self.clock_t, dt, shake)
+            r = self.renderers[f.player_id]
+            r.draw(surf, f, self.clock_t, dt, shake)
+            self._attack_trail(f, r)
         for p in self.state.projectiles:
             self.effects.draw_projectile(surf, p, STYLES[p.owner].accent, self.clock_t, shake)
         self.effects.draw(surf, shake)
+
+    def _attack_trail(self, f, renderer) -> None:
+        """Motion trail on the striking fist so hook and uppercut read differently."""
+        a = f.attack
+        if f.state != FighterState.PUNCH or a is None:
+            return
+        spec = a.spec
+        if not (spec.startup * 0.6 <= f.state_time <= spec.startup + spec.active + 0.06):
+            return
+        fist = renderer.joints.get("wr_f" if a.side == "left" else "wr_b")
+        if fist is None:
+            return
+        color = STYLES[f.player_id].accent
+        self.effects.swing_trail(fist[0], fist[1], spec.name, color, f.facing)
+        if spec.name == "uppercut" and abs(f.state_time - spec.startup) < 0.02:
+            self.effects.dust(f.x, f.ground_y, f.facing)
+            self.effects.dust(f.x, f.ground_y, -f.facing)
 
     def _control_labels(self, snap: VisionSnapshot | None) -> tuple[str, str]:
         labels = []
@@ -553,11 +590,13 @@ class App:
         y = top + 26
         if self.scene == Scene.FIGHT:
             if self.use_vision:
-                hints = ["PUNCH: fast arm extension", "BLOCK: both hands to face",
-                         "SPECIAL: both arms up & hold", "MOVE: step left / right"]
+                hints = ["HOOK: elbow bent 90°, swing fist across your body",
+                         "UPPERCUT: one fist up & forward to head height",
+                         "BLOCK: both hands to face   SPECIAL: both arms up & hold",
+                         "MOVE: step left / right"]
             else:
-                hints = ["P1  A/D move  S block  F/G punch  R special",
-                         "P2  arrows move  DOWN block  K/L punch  I special"]
+                hints = ["P1  A/D move  S block  F/G hook  T/Y uppercut  R special",
+                         "P2  arrows move  DOWN block  K/L hook  O/P uppercut  I special"]
             for h in hints:
                 text(self.screen, h, 24, (cx, y), (215, 205, 230), outline=0)
                 y += 26
@@ -651,15 +690,31 @@ class App:
             for k, line in enumerate(_wrap(self.vision_error, 100)[:3]):
                 text(self.screen, line, 26, (self.W // 2, y + k * 26), (255, 140, 120))
             return
-        if snap and snap.registered:
+        solo = getattr(self, "calib_vs_cpu", False)
+        p1_ok = snap is not None and snap.players[0].state == TrackState.ACTIVE
+        if snap and (snap.registered or (solo and p1_ok)):
             remain = 2.5 - (time.perf_counter() - (self.calib_ready_since or time.perf_counter()))
-            text(self.screen, f"BOTH PLAYERS REGISTERED - starting in {max(0, remain):.1f}s", 34,
+            msg = "PLAYER 1 REGISTERED" if solo else "BOTH PLAYERS REGISTERED"
+            text(self.screen, f"{msg} - starting in {max(0, remain):.1f}s", 34,
                  (self.W // 2, y), (120, 240, 140))
         else:
             n = snap.num_poses if snap else 0
-            text(self.screen, "Player 1 stands on the LEFT, Player 2 on the RIGHT. Face the camera,"
-                 " upper body and hips visible, arms relaxed.", 26, (self.W // 2, y), WHITE)
-            text(self.screen, f"People detected: {n}/2", 30, (self.W // 2, y + 34), GOLD)
+            need = 1 if solo else 2
+            if solo:
+                hint = "Stand 2-3 m from the camera, facing it: head, arms and hips must be visible."
+            else:
+                hint = ("Player 1 stands on the LEFT, Player 2 on the RIGHT. Face the camera,"
+                        " upper body and hips visible, arms relaxed.")
+            text(self.screen, hint, 26, (self.W // 2, y), WHITE)
+            col = GOLD if n < need else (120, 240, 140)
+            status = f"People detected: {n}/{need}"
+            if n == 0:
+                status += "   - step back so your whole upper body is in the picture"
+            elif p1_ok and not solo:
+                status += "   - P1 registered, waiting for P2 (or press ENTER)"
+            elif n >= 1:
+                status += "   - hold still..."
+            text(self.screen, status, 28, (self.W // 2, y + 34), col)
         text(self.screen, "ENTER: start now (missing player uses keyboard)    R: re-register    ESC: back",
              22, (self.W // 2, self.H - 24), (170, 160, 190), outline=0)
 

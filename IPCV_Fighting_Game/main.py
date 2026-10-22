@@ -29,7 +29,7 @@ def parse_args(argv=None) -> argparse.Namespace:
     ap.add_argument("--debug", action="store_true", help="start with the debug overlay on")
     ap.add_argument("--fullscreen", action="store_true")
     ap.add_argument("--mute", action="store_true")
-    ap.add_argument("--start", choices=("webcam", "keyboard", "cpu", "gesture_test"),
+    ap.add_argument("--start", choices=("webcam", "webcam_cpu", "keyboard", "cpu", "gesture_test"),
                     help="skip the menu and start this mode")
     ap.add_argument("--frames", type=int, help="exit after N frames (automated smoke tests)")
     ap.add_argument("--screenshot", help="save a screenshot when exiting via --frames")

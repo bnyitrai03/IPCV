@@ -87,7 +87,7 @@ def resolve_melee(fighters: list[Fighter], cfg: GameConfig) -> list[GameEvent]:
         point = hb.intersection_center(defender.hurtbox())
         events.append(_register_hit(attacker, defender, spec.damage, spec.hitstun,
                                     spec.blockstun, spec.knockback, point, cfg,
-                                    f"punch_{attack.side}", attack.source_ts))
+                                    f"{spec.name}_{attack.side}", attack.source_ts))
     return events
 
 

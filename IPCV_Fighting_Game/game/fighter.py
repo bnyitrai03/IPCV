@@ -5,7 +5,7 @@ regardless of rendering frame rate. Pure Python, no pygame dependency.
 
 States::
 
-    IDLE/WALK --punch--> PUNCH (startup -> active -> recovery) --> IDLE
+    IDLE/WALK --hook/uppercut--> PUNCH (startup -> active -> recovery) --> IDLE
     IDLE/WALK --block held--> BLOCK --released--> IDLE
     IDLE/WALK --special (energy)--> SPECIAL (charge -> release -> recovery)
     any --hit--> HITSTUN --> IDLE          any --blocked hit--> BLOCKSTUN
@@ -19,7 +19,7 @@ from enum import Enum, auto
 
 from config import GameConfig
 from game.collision import Box
-from game.controls import PlayerInput
+from game.controls import ONE_SHOT_ACTIONS, PlayerInput
 
 
 class FighterState(Enum):
@@ -49,9 +49,15 @@ class AttackSpec:
     knockback: float      # px/s initial push
 
 
-PUNCH = AttackSpec("punch", startup=0.07, active=0.09, recovery=0.16, damage=6.0,
-                   reach=95.0, height=46.0, y_offset=160.0,
-                   hitstun=0.28, blockstun=0.16, knockback=260.0)
+# Hook: the fast, basic attack.
+HOOK = AttackSpec("hook", startup=0.09, active=0.09, recovery=0.18, damage=8.0,
+                  reach=85.0, height=50.0, y_offset=165.0,
+                  hitstun=0.34, blockstun=0.18, knockback=300.0)
+# Uppercut: slowest and shortest, biggest damage and knockback; long recovery = punishable.
+UPPERCUT = AttackSpec("uppercut", startup=0.12, active=0.10, recovery=0.30, damage=11.0,
+                      reach=72.0, height=80.0, y_offset=180.0,
+                      hitstun=0.48, blockstun=0.22, knockback=380.0)
+ATTACKS = {"hook": HOOK, "uppercut": UPPERCUT}
 SPECIAL_CHARGE = 0.32
 SPECIAL_RECOVERY = 0.38
 
@@ -146,12 +152,9 @@ class Fighter:
 
     def apply_input(self, inp: PlayerInput) -> list[str]:
         """Queue one-shot actions and update held actions. Returns started actions."""
-        if inp.punch_left:
-            self.buffer.append(("punch_left", 0.0, inp.source_ts.get("punch_left")))
-        if inp.punch_right:
-            self.buffer.append(("punch_right", 0.0, inp.source_ts.get("punch_right")))
-        if inp.special:
-            self.buffer.append(("special", 0.0, inp.source_ts.get("special")))
+        for action in ONE_SHOT_ACTIONS:
+            if getattr(inp, action):
+                self.buffer.append((action, 0.0, inp.source_ts.get(action)))
         self.walk_dir = inp.move
         started: list[str] = []
 
@@ -168,8 +171,8 @@ class Fighter:
                         break
                     started.append("special_denied")
                     continue
-                side = "left" if action == "punch_left" else "right"
-                self.attack = ActiveAttack(PUNCH, side, source_ts=src_ts)
+                kind, side = action.split("_")
+                self.attack = ActiveAttack(ATTACKS[kind], side, source_ts=src_ts)
                 self._set_state(FighterState.PUNCH)
                 started.append(action)
                 break

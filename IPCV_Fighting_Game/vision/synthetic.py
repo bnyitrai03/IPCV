@@ -1,7 +1,7 @@
 """Synthetic two-person scenario generator (test harness, NOT a CV result).
 
 Produces MediaPipe-shaped pose/face detections plus a rendered image for a
-scripted 32 s scenario: idle, punches (towards the camera), block, special,
+scripted 32 s scenario: idle, hooks, uppercuts, forward jabs (must NOT fire), block, special,
 side-stepping, the two players **crossing**, and one player leaving and
 re-entering the frame. Detector output order is shuffled every frame, as a
 real detector gives no ordering guarantees.
@@ -51,15 +51,19 @@ def _punch_progress(t: float, start: float) -> float:
 
 
 # Scripted gesture times (seconds within the loop), per person index.
+# "jab_*" = straight punches at the camera. They are NOT a game action any more,
+# so they act as negative examples: they must not produce any event.
 SCRIPT = {
-    0: {"punch_right": [4.0, 9.5], "punch_left": [5.0], "block": [(7.0, 8.2)],
-        "special": [(11.0, 12.0)]},
-    1: {"punch_left": [4.6, 10.0], "punch_right": [6.0], "block": [(8.6, 9.4)],
-        "special": [(12.5, 13.5)]},
+    0: {"jab_right": [4.0, 9.5], "jab_left": [5.0], "block": [(7.0, 8.2)],
+        "special": [(11.0, 12.0)], "hook_right": [2.0], "uppercut_left": [3.0]},
+    1: {"jab_left": [4.6, 10.0], "jab_right": [6.0], "block": [(8.6, 9.4)],
+        "special": [(12.5, 13.5)], "uppercut_right": [2.4], "hook_left": [3.3]},
 }
 EXPECTED_EVENTS = {
-    0: {"punch_right": 2, "punch_left": 1, "special": 1, "block_start": 1},
-    1: {"punch_left": 2, "punch_right": 1, "special": 1, "block_start": 1},
+    0: {"special": 1, "block_start": 1,
+        "hook_right": 1, "uppercut_left": 1},
+    1: {"special": 1, "block_start": 1,
+        "uppercut_right": 1, "hook_left": 1},
 }
 
 
@@ -123,7 +127,10 @@ class SyntheticScenario:
         special = any(a <= t < b for a, b in script.get("special", []))
         for side, s_i, e_i, w_i, sgn in (("left", L_SHOULDER, L_ELBOW, L_WRIST, -1),
                                          ("right", R_SHOULDER, R_ELBOW, R_WRIST, 1)):
-            punch = max((_punch_progress(t, s) for s in script.get(f"punch_{side}", [])), default=0.0)
+            punch = max((_punch_progress(t, s) for s in script.get(f"jab_{side}", [])), default=0.0)
+            hook = max((_punch_progress(t, s) for s in script.get(f"hook_{side}", [])), default=0.0)
+            upper = max((_punch_progress(t, s) for s in script.get(f"uppercut_{side}", [])),
+                        default=0.0)
             s = iso[s_i]
             if special:
                 wrist = s + np.array([sgn * 0.1, -1.75]) * u
@@ -140,6 +147,19 @@ class SyntheticScenario:
                 elbow = rest_e + (punch_e - rest_e) * punch
                 z[w_i] = -1.55 * punch * SW_METRES
                 z[e_i] = -0.75 * punch * SW_METRES
+                if hook > 0:       # elbow bent ~90 deg, fist swings across at head height
+                    hook_w = s + np.array([-sgn * 1.2, -0.1]) * u
+                    hook_e = s + np.array([sgn * 0.2, 0.0]) * u
+                    wrist = rest_w + (hook_w - rest_w) * hook
+                    elbow = rest_e + (hook_e - rest_e) * hook
+                    z[e_i] = -0.75 * hook * SW_METRES      # elbow out in front
+                    z[w_i] = -0.85 * hook * SW_METRES
+                if upper > 0:      # fist driven up and forward to head height
+                    up_w = s + np.array([-sgn * 0.35, -1.1]) * u
+                    up_e = s + np.array([sgn * 0.05, -0.45]) * u
+                    z[w_i] = -0.6 * upper * SW_METRES
+                    wrist = rest_w + (up_w - rest_w) * upper
+                    elbow = rest_e + (up_e - rest_e) * upper
             iso[w_i], iso[e_i] = wrist, elbow
 
         img = np.zeros((NUM_LANDMARKS, 4))

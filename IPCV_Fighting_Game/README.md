@@ -16,6 +16,23 @@ Design). All five compulsory tasks run together in one application.
 
 ---
 
+## 0. Quick start (one step)
+
+**macOS**: open Terminal in this folder and run
+
+```bash
+bash start_game.command
+```
+
+**Windows**: double-click `start_game.bat`.
+
+The first run creates the Python environment and installs everything (a few
+minutes). Every run then checks Python, packages, models (downloads them if
+missing) and the camera, prints `[FAIL]` with the exact fix if something is
+wrong, and otherwise starts the game directly in **webcam mode**.
+Options are passed through, e.g. `bash start_game.command --camera 1 --fullscreen`.
+The checker can also be run alone: `python scripts/check_setup.py`.
+
 ## 1. Installation
 
 Requirements: Python **3.10 – 3.13** (3.11 or 3.12 recommended), a webcam,
@@ -86,7 +103,7 @@ python main.py --vision synthetic  # no webcam: scripted synthetic players (demo
 python main.py --fullscreen --mute --debug
 ```
 
-Menu modes: **Webcam fight**, **Keyboard fight**, **Practice vs CPU**,
+Menu modes: **Webcam fight** (2 players), **Solo - webcam vs CPU**, **Keyboard fight**, **Practice - keyboard vs CPU**,
 **Gesture test** (evaluation protocol), **Quit**.
 
 ### Setting up the play area
@@ -102,18 +119,22 @@ Menu modes: **Webcam fight**, **Keyboard fight**, **Practice vs CPU**,
 
 | Action | Movement | Notes |
 |---|---|---|
-| Left punch | fast forward extension of the **left** arm | towards the camera or sideways; must pull the arm back before the next punch |
-| Right punch | fast forward extension of the **right** arm | same |
+| Hook (left / right) | elbow **bent ~90°**, swing the fist fast **sideways across in front of your body** at chin height | main attack: 8 damage; a straight-arm swing does not count |
+| Uppercut (left / right) | drive **one fist fast up and forward** to head height (a small dip first is fine) | 11 damage, big knockback, shorter range |
 | Block | **both hands near the face** | held as long as the guard is held |
 | Special (energy ball) | **both arms raised above the head**, hold ~0.35 s | needs half an energy bar; lower arms to re-arm |
 | Move | **step left / right** from your registered position | dead zone ignores swaying |
 
 The keyboard always works in parallel (useful for testing or a missing player):
 
-| | Move | Block | Left punch | Right punch | Special |
+| | Move | Block | Left hook | Right hook | Special |
 |---|---|---|---|---|---|
 | P1 | A / D | S | F | G | R |
 | P2 | ← / → | ↓ | K | L | I |
+
+Uppercuts: P1 T / Y, P2 O / P.
+
+Keys are matched by **physical position**, so they work with any keyboard layout (Greek, AZERTY, …): "A" means the key where A is on a US keyboard. Input is ignored during the 2-second "ROUND / FIGHT!" intro. On a Mac laptop, F1/F2/F5–F8 may need the **fn** key.
 
 Other keys: **Esc** pause/back, **Enter** confirm/rematch, **F1** debug
 overlay (FPS, latency, tracking signals, full camera view with both
@@ -231,15 +252,21 @@ Per player (`PlayerPose`):
 
 ### Task 4 — gestures → actions
 All thresholds are in shoulder widths (sw) and configurable (`config.py`).
-* **Punch** (per arm state machine `ARMED → fire → EXTENDED → retract → ARMED`):
-  fires when the arm reach rises faster than 2.5 sw/s and exceeds 1.35 sw,
-  with the wrist at chest/head height. Holding the arm out never re-fires;
-  the arm must come back below 1.05 sw, plus a 0.3 s cooldown. Slow reaching
-  is consumed without firing.
-  **Monocular depth**: a punch towards the camera barely changes the 2D image,
-  so reach is the larger of (a) 2D reach and (b) reach from MediaPipe's
-  *estimated* metric world landmarks. (b) is an approximation from a single
-  camera — not a measured 3D trajectory.
+* **Attacks** (per arm, `ARMED → fire → RECOVER → ARMED`). Both attacks are
+  found in a 0.6 s trail of recent fist positions, measured from the point
+  that gives the fastest motion (the turning point of an out-then-in wind-up,
+  or the bottom of a dip), so natural boxing movements work.
+  **Hook**: inward horizontal sweep ≥ 0.6 sw towards/across the body midline
+  within 0.4 s at ≥ 2.5 sw/s, at chest-head height, with the **elbow bent
+  50–130°** (median over the sweep). The elbow angle is computed in 3D from
+  MediaPipe's *estimated* world landmarks, because a bent arm whose forearm
+  points at the camera looks straight in the 2D image; 2D is the fallback.
+  **Uppercut**: rise ≥ 0.8 sw, mostly upwards, ending at head height with the
+  arm reaching out (≥ 0.95 sw), confirmed after 120 ms so that raising both
+  arms (special) or a hand to the face (guard) does not trigger it.
+  After an attack the arm must come back and slow down before it re-arms
+  (0.3 s cooldown): holding a pose or pulling back never fires. Straight
+  punches are deliberately not an action (unreliable depth from one camera).
 * **Block**: both wrists within 0.85 sw of the nose for 80 ms (confirmation),
   released above 1.05 sw (hysteresis).
 * **Special**: both wrists 0.45 sw above the nose held 0.35 s; re-arms only
@@ -247,7 +274,7 @@ All thresholds are in shoulder widths (sw) and configurable (`config.py`).
 * **Move**: shoulder-midpoint offset from the registered neutral position;
   dead zone 0.3 sw, full speed at 1.1 sw, EMA smoothed.
 * Both players are processed independently in the same frame, so
-  simultaneous actions are supported (and simultaneous punches trade hits).
+  simultaneous actions are supported (and simultaneous hooks trade hits).
 * Game side: hit/hurt boxes, startup/active/recovery frames, 150 ms input
   buffer, block damage reduction (85 %), counter hits, combo scaling,
   projectiles with clashes, KO, time-out, best of 3 rounds.
@@ -266,12 +293,12 @@ play; lost player → "TRACKING LOST" in their panel, keyboard still works.
 What has been run (on a Linux machine **without a webcam**, where the
 MediaPipe model download was blocked by the network):
 
-* `pytest`: 25 tests — game logic (hits, blocking, buffering, trades,
+* `pytest`: 41 tests — game logic (hits, blocking, buffering, trades,
   specials, projectiles/clashes, KO, time-out, restart, counter hits) and
-  vision logic (One Euro filter, missing-landmark hold/recovery, punch fires
-  once while the arm stays extended, slow reach does not fire, identity kept
+  vision logic (One Euro filter, missing-landmark hold/recovery, hooks need a
+  bent elbow, attacks fire once while the pose is held, slow reach does not fire, identity kept
   through a full crossing, occlusion recovery and re-entry, faces never
-  switch players, expected gesture counts, trial scoring).
+  switch players, expected gesture counts, trial scoring) and keyboard input with a non-US layout.
 * Headless runs of every scene (menu, keyboard, CPU, webcam with the synthetic
   scenario, gesture test) and a 3-minute synthetic stability run with logging.
 * MediaPipe Tasks API calls were checked against installed mediapipe 0.10.32
@@ -286,10 +313,10 @@ are not results. Use the checklist below and the evaluation tools.
 ### Live test checklist (please do this first)
 1. `python scripts/verify_multipose.py` with two people → note the % of frames with 2 poses and inference times.
 2. `python main.py --debug --log` → Webcam fight. Registration should show P1/P2 labels.
-3. One player: throw single punches with each arm; hold an arm extended (must hit **once**); guard the face (BLOCK light); raise both arms (special); step left/right.
-4. Two players: punch at the same time; walk past each other (crossing) and check the labels/effects in the panels stay with the right person; one player leaves the frame and returns.
+3. One player: hooks (elbow bent) and uppercuts with each arm; hold the pose afterwards (must hit **once**); a straight-arm swing and a straight punch must do nothing; guard the face (BLOCK light); raise both arms (special); step left/right.
+4. Two players: attack at the same time; walk past each other (crossing) and check the labels/effects in the panels stay with the right person; one player leaves the frame and returns.
 5. Turn your head, lean, move closer/further: AR effects should stay aligned.
-6. If punches are missed or trigger too easily, read `reach`/`rate` in the F1 overlay and adjust `punch_extend_ratio` / `punch_min_speed` in `config.json`.
+6. If attacks are missed or trigger too easily, read `elbow`, `hook` and `rise` in the F1 overlay and adjust `hook_min_dx`, `hook_min_elbow_deg`/`hook_max_elbow_deg`, `uppercut_min_rise`, `uppercut_min_reach` or `attack_min_speed` in `config.json`.
 7. Play several full matches (≥ 10 min) with `--log`, then `python scripts/analyze_session.py`.
 
 ---
@@ -315,7 +342,7 @@ python scripts/analyze_session.py            # newest session → summary.md / s
 | F8 | a crossing finished with identities wrong |
 
 **Gesture test mode** prompts "P1: RIGHT PUNCH", "P2: BLOCK", simultaneous
-punches and idle periods (5 repetitions, ~50 trials). The prompt is the label,
+attacks and idle periods (3 repetitions). The prompt is the label,
 giving precision, recall, missed actions, idle false positives per minute and
 simultaneous-action success without video annotation.
 
@@ -347,9 +374,11 @@ latency before that are not measurable in software and are excluded.
 
 ## 7. Known limitations
 
-* **Depth**: forward punches rely on MediaPipe's estimated world coordinates
-  from one camera; very small or slow punches straight at the camera may be
-  missed. Sideways punches are detected from 2D and are more reliable.
+* **Depth / elbow angle**: the hook's 90° elbow check uses MediaPipe's
+  *estimated* 3D landmarks; when the forearm points straight at the camera the
+  estimate is noisy, so the accepted range is wide (50–130°). Straight punches
+  at the camera were dropped as an action because one camera measures depth
+  poorly.
 * **Multi-person pose** quality depends on both people being fully visible;
   strong overlap during crossings often hides one person for a moment — the
   tracker coasts through it, but very long full occlusions end in re-entry
@@ -414,6 +443,6 @@ or `"face": {"run_every_n_frames": 2}`.
 | "Could not open camera" | camera permission (macOS), close other camera apps, try `--camera 1` |
 | Only one skeleton | both people fully in frame, more light, step back; check with `verify_multipose.py` |
 | Low FPS | lite pose model, `inference_width` 480, face every 2 frames; see F1 overlay |
-| Punches trigger while moving | raise `punch_min_speed` or `punch_extend_ratio` |
-| Punches missed | lower them; punch with the arm at shoulder height |
+| Attacks trigger by accident | raise `attack_min_speed`, `hook_min_dx` or `uppercut_min_rise` |
+| Hooks missed | lower `hook_min_dx`; widen `hook_min_elbow_deg`/`hook_max_elbow_deg` (see `elbow` in F1) |
 | Players swapped after registration | press R in the registration screen; wear different colours |

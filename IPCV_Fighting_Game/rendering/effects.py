@@ -107,6 +107,18 @@ class EffectsManager:
                                -p.direction * r.uniform(30, 120), r.uniform(-40, 40),
                                0.3, 0.3, r.uniform(3, 7), color, kind="spark"))
 
+    def swing_trail(self, x: float, y: float, kind: str, color, facing: int) -> None:
+        """Ribbon of glowing points left by the fist: horizontal arc for hooks,
+        vertical streak for uppercuts."""
+        r = self.rng
+        for _ in range(3):
+            if kind == "uppercut":
+                vx, vy = r.uniform(-20, 20), r.uniform(-260, -140)
+            else:
+                vx, vy = -facing * r.uniform(40, 110), r.uniform(-25, 25)
+            self._add(Particle(x + r.uniform(-6, 6), y + r.uniform(-6, 6), vx, vy,
+                               0.28, 0.28, r.uniform(7, 12), color, kind="trail"))
+
     def charge(self, x: float, y: float, color) -> None:
         a = self.rng.uniform(0, math.tau)
         d = self.rng.uniform(40, 80)
@@ -184,6 +196,10 @@ class EffectsManager:
             elif p.kind == "glow":
                 r = max(2, int(p.size * (0.6 + 0.4 * k)))
                 surf.blit(self._glow(r, p.color), (x - r, y - r), special_flags=pygame.BLEND_RGBA_ADD)
+            elif p.kind == "trail":
+                r = max(2, int(p.size * k))
+                surf.blit(self._glow(r, p.color), (x - r, y - r), special_flags=pygame.BLEND_RGBA_ADD)
+                pygame.draw.circle(surf, (255, 250, 230), (int(x), int(y)), max(1, r // 3))
             elif p.kind == "dust":
                 s = max(1, int(p.size * (1.4 - k)))
                 pygame.draw.circle(surf, p.color, (int(x), int(y)), s)
