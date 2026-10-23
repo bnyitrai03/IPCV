@@ -36,6 +36,8 @@ def _backend_flag(name: str) -> int:
             return cv2.CAP_AVFOUNDATION
         if system == "Windows":
             return cv2.CAP_DSHOW      # opens faster than MSMF on most laptops
+        if system == "Linux":
+            return cv2.CAP_V4L2
         return cv2.CAP_ANY
     return {"avfoundation": cv2.CAP_AVFOUNDATION, "dshow": cv2.CAP_DSHOW,
             "msmf": cv2.CAP_MSMF, "v4l2": cv2.CAP_V4L2}.get(name, cv2.CAP_ANY)
@@ -59,15 +61,21 @@ class CameraThread:
         self.actual_fps = 0.0
 
     def start(self) -> None:
-        cap = cv2.VideoCapture(self.cfg.index, _backend_flag(self.cfg.backend))
+        backend = _backend_flag(self.cfg.backend)
+        cap = cv2.VideoCapture(self.cfg.index, backend)
         if not cap.isOpened():
             cap.release()
             cap = cv2.VideoCapture(self.cfg.index)        # fallback: default backend
+            backend = cv2.CAP_ANY
         if not cap.isOpened():
             raise CameraError(
                 f"Could not open camera index {self.cfg.index}. On macOS, grant camera "
                 "permission to your terminal/IDE (System Settings > Privacy & Security > "
                 "Camera) and try --camera 1 if you have several cameras.")
+        # Linux UVC cameras often deliver corrupt (green) frames unless MJPG is
+        # explicitly negotiated, even when the resolution only exists in MJPG.
+        if backend in (cv2.CAP_V4L2, cv2.CAP_ANY) and platform.system() == "Linux":
+            cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*"MJPG"))
         cap.set(cv2.CAP_PROP_FRAME_WIDTH, self.cfg.width)
         cap.set(cv2.CAP_PROP_FRAME_HEIGHT, self.cfg.height)
         cap.set(cv2.CAP_PROP_FPS, self.cfg.fps)
