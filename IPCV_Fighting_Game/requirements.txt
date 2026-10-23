@@ -1,0 +1,9 @@
+# Runtime
+mediapipe>=0.10.30,<2      # Tasks API (PoseLandmarker / FaceLandmarker, multi-person). API checked on 0.10.32 and 1.1.1
+opencv-python>=4.9         # camera capture, image processing (GUI build needed only by scripts/verify_multipose.py)
+pygame>=2.5                # rendering, input, audio
+numpy>=1.24
+psutil>=5.9                # CPU / memory measurement (optional: metrics show n/a without it)
+
+# Development / tests
+pytest>=7
