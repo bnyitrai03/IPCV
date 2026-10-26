@@ -9,9 +9,7 @@ depend on operator annotations are labelled MANUAL.
 """
 from __future__ import annotations
 
-import csv
 import json
-import math
 import sys
 from pathlib import Path
 
@@ -21,25 +19,15 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 from config import LOGS_DIR  # noqa: E402
 from evaluation.gesture_metrics import analyze_gestures  # noqa: E402
+from evaluation.session import num_col, read_csv  # noqa: E402
 from evaluation.tracking_metrics import analyze_tracking  # noqa: E402
 
 
 def analyze_performance(d: Path) -> dict:
-    path = d / "performance.csv"
-    if not path.is_file():
-        return {}
-    with path.open(newline="", encoding="utf-8") as fh:
-        rows = list(csv.DictReader(fh))
+    rows = read_csv(d / "performance.csv")
     if not rows:
         return {}
-    def col(k):
-        out = []
-        for r in rows:
-            try:
-                out.append(float(r[k]))
-            except (KeyError, ValueError):
-                out.append(math.nan)
-        return np.array(out)
+    col = lambda k: num_col(rows, k)
     fps = col("render_fps")
     res = {"seconds_logged": len(rows),
            "render_fps_mean": float(np.nanmean(fps)),

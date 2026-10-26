@@ -75,6 +75,10 @@ class SyntheticScenario:
         self.rng = np.random.default_rng(seed)
         self.people = [PersonSpec((40, 40, 210), 0.30), PersonSpec((200, 120, 30), 0.70)]
         self.u = 0.13   # shoulder width, normalised-x units
+        grad = np.linspace(70, 110, height, dtype=np.uint8)[:, None]
+        self._bg = np.repeat(np.repeat(grad, width, axis=1)[:, :, None], 3, axis=2)
+        ang = np.linspace(0, 2 * math.pi, 478, endpoint=False)
+        self._face_template = np.column_stack((0.17 * np.cos(ang), 0.08 + 0.3 * np.sin(ang)))
 
     # ------------------------------------------------------------- scenario
     def person_x(self, idx: int, t: float) -> float:
@@ -183,10 +187,7 @@ class SyntheticScenario:
         yaw = 0.25 * math.sin(t * 0.9 + idx) if 25.0 > t > 16.5 else 0.0
         roll = 0.15 * math.sin(t * 0.7 + idx * 2) if 25.0 > t > 16.5 else 0.0
         R = np.array([[math.cos(roll), -math.sin(roll)], [math.sin(roll), math.cos(roll)]])
-        pts = np.zeros((478, 2))
-        ang = np.linspace(0, 2 * math.pi, 478, endpoint=False)
-        pts[:, 0] = 0.17 * np.cos(ang)
-        pts[:, 1] = 0.08 + 0.3 * np.sin(ang)
+        pts = self._face_template.copy()
         ex = 0.085 * math.cos(yaw)
         def setp(i, x, y):
             pts[i] = (x, y)
@@ -207,9 +208,7 @@ class SyntheticScenario:
     # ------------------------------------------------------------ frame
     def frame(self, t: float) -> tuple[np.ndarray, list[PoseDetection], list[FaceDetection]]:
         t = t % SCENARIO_LENGTH
-        image = np.zeros((self.h, self.w, 3), dtype=np.uint8)
-        grad = np.linspace(70, 110, self.h, dtype=np.uint8)[:, None]
-        image[:] = np.repeat(grad, self.w, axis=1)[:, :, None]
+        image = self._bg.copy()
         poses, faces = [], []
         for idx, spec in enumerate(self.people):
             if not self.visible(idx, t):

@@ -11,8 +11,6 @@ from __future__ import annotations
 import logging
 import time
 
-import cv2
-import numpy as np
 import pygame
 
 from config import Config
@@ -21,18 +19,16 @@ from evaluation.performance import PerformanceMonitor
 from evaluation.session import Session
 from evaluation.tracking_metrics import TrackingLogger
 from fight_session import FightPhase, FightSession
-from game.controls import key_is
 from game.fighter import SPECIAL_CHARGE, FighterState
 from game.game_state import Phase
 from rendering.arena import Arena
 from rendering.characters import STYLES, FighterRenderer
 from rendering.effects import EffectsManager
-from rendering.interface import (DARK, GOLD, HUD, WHITE, Banner, WebcamPanel, draw_debug,
-                                 status_for, text)
+from rendering.interface import (GOLD, HUD, WHITE, Banner, WebcamPanel, draw_camera_view,
+                                 draw_debug, status_for, text, wrap_text)
 from rendering.sound import SoundBank
 from vision.pipeline import VisionError, VisionPipeline, VisionSnapshot
 from vision.player_tracking import TrackState
-from vision.pose_tracking import SKELETON_EDGES
 
 log = logging.getLogger(__name__)
 
@@ -55,8 +51,9 @@ class App:
         self.W, self.H = g.window_width, g.window_height
         self.arena_h = g.arena_height
         self.ground_y = self.arena_h - 64
-        self.arena_surf = pygame.Surface((self.W, self.arena_h))
         self.arena = Arena(self.W, self.arena_h, self.ground_y)
+        self._pause_overlay = pygame.Surface((self.W, self.H), pygame.SRCALPHA)
+        self._pause_overlay.fill((8, 6, 14, 170))
         self.effects = EffectsManager()
         self.hud = HUD(self.W)
         self.banner = Banner()
@@ -211,7 +208,8 @@ class App:
                 self.running = False
             elif key == pygame.K_RETURN:
                 self.session.request_start()
-            elif key_is(event, "R") and self.vision:
+            elif (key == pygame.K_r or getattr(event, "scancode", None) == pygame.KSCAN_R) \
+                    and self.vision:
                 self.vision.request("reregister")
                 self.session.reset_calibration()
         elif phase == FightPhase.PAUSED:
@@ -255,20 +253,8 @@ class App:
         applied_ts = time.perf_counter()
         phase_before = self.session.state.phase
         events = self.session.step(step)
-        vision_events = self.session.take_vision_events()
-        if vision_events and self.gesture_logger:
-            executed = {e.data.get("source_ts"): e.data["action"] for e in events
-                        if e.kind == "action" and e.data.get("source_ts") is not None}
-            for ev in vision_events:
-                if ev.gesture in ("block_start", "block_end"):
-                    result = "held_state"
-                elif phase_before != Phase.FIGHT:
-                    result = "ignored_not_fighting"
-                else:
-                    act = executed.get(ev.capture_ts)
-                    result = ("executed" if act and act != "special_denied"
-                              else "denied_no_energy" if act == "special_denied"
-                              else "not_executed_busy")
+        for ev, result in self.session.resolve_vision_events(events, phase_before):
+            if self.gesture_logger:
                 self.gesture_logger.log(ev, applied_ts, result)
         self._game_events(events)
         for f in self.session.state.fighters:
@@ -348,10 +334,9 @@ class App:
             self._render_calibration(snap)
         else:
             self._render_arena(dt)
-            self.hud.draw(self.arena_surf, self.session.state, self.clock_t,
+            self.hud.draw(self.screen, self.session.state, self.clock_t,
                           self._control_labels(snap))
-            self.banner.draw(self.arena_surf, (self.W // 2, self.arena_h // 2 - 20))
-            self.screen.blit(self.arena_surf, (0, 0))
+            self.banner.draw(self.screen, (self.W // 2, self.arena_h // 2 - 20))
             self._render_bottom(snap)
             if self.session.phase == FightPhase.PAUSED:
                 self._render_pause()
@@ -365,7 +350,7 @@ class App:
         self.effects.draw_flash(self.screen)
 
     def _render_arena(self, dt: float) -> None:
-        surf = self.arena_surf
+        surf = self.screen
         shake = self.effects.offset()
         self.arena.draw(surf, self.clock_t, shake, dt)
         fighters = sorted(self.session.state.fighters,
@@ -440,59 +425,23 @@ class App:
              (cx, self.H - 20), (140, 130, 160), outline=0)
 
     def _render_pause(self) -> None:
-        overlay = pygame.Surface((self.W, self.H), pygame.SRCALPHA)
-        overlay.fill((8, 6, 14, 170))
-        self.screen.blit(overlay, (0, 0))
+        self.screen.blit(self._pause_overlay, (0, 0))
         text(self.screen, "PAUSED", 90, (self.W // 2, 180), GOLD, outline=4)
         for i, label in enumerate(("RESUME", "RESTART MATCH", "QUIT")):
             sel = i == self.pause_index
             text(self.screen, ("> " if sel else "") + label, 44, (self.W // 2, 280 + i * 56),
                  GOLD if sel else WHITE)
 
-    def _camera_view(self, snap: VisionSnapshot | None, rect: pygame.Rect) -> None:
-        pygame.draw.rect(self.screen, DARK, rect.inflate(10, 10), border_radius=10)
-        if snap is None or snap.image is None:
-            text(self.screen, "Starting camera...", 40, rect.center, WHITE)
-            return
-        img = snap.image.copy()
-        H, W = img.shape[:2]
-        colors = [(90, 220, 255), (255, 200, 90)]
-        for p in snap.players:
-            if p.state != TrackState.ACTIVE:
-                continue
-            lm = p.landmarks
-            for a, b in SKELETON_EDGES:
-                if np.isnan(lm[a]).any() or np.isnan(lm[b]).any():
-                    continue
-                cv2.line(img, (int(lm[a, 0] * W), int(lm[a, 1] * H)),
-                         (int(lm[b, 0] * W), int(lm[b, 1] * H)), colors[p.pid], 3, cv2.LINE_AA)
-            cx = int(p.center[0] * W)
-            top = int(p.bbox[1] * H) if p.bbox else int(p.center[1] * H)
-            label = f"P{p.pid + 1} {STYLES[p.pid].name}"
-            (tw_, _), _ = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.8, 2)
-            org = (cx - tw_ // 2, max(24, top - 30))
-            cv2.putText(img, label, org, cv2.FONT_HERSHEY_SIMPLEX, 0.8, (20, 20, 20), 5, cv2.LINE_AA)
-            cv2.putText(img, label, org, cv2.FONT_HERSHEY_SIMPLEX, 0.8, colors[p.pid], 2, cv2.LINE_AA)
-        th = rect.height
-        tw = int(th * W / H)
-        if tw > rect.width:
-            tw = rect.width
-            th = int(tw * H / W)
-        img = cv2.resize(img, (tw, th))
-        rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-        surf = pygame.image.frombuffer(rgb.tobytes(), (tw, th), "RGB")
-        self.screen.blit(surf, (rect.centerx - tw // 2, rect.top))
-
     def _render_calibration(self, snap: VisionSnapshot | None) -> None:
         self.screen.fill((18, 14, 26))
         text(self.screen, "PLAYER REGISTRATION", 64, (self.W // 2, 50), GOLD, outline=3)
         rect = pygame.Rect(0, 0, 840, 472)
         rect.midtop = (self.W // 2, 95)
-        self._camera_view(snap, rect)
+        draw_camera_view(self.screen, snap, rect)
         y = rect.bottom + 30
         can_start = self.session.can_start_early(snap)
         if self.vision_error:
-            for k, line in enumerate(_wrap(self.vision_error, 100)[:3]):
+            for k, line in enumerate(wrap_text(self.vision_error, 100)[:3]):
                 text(self.screen, line, 26, (self.W // 2, y + k * 26), (255, 140, 120))
         else:
             now = time.perf_counter()
@@ -517,16 +466,3 @@ class App:
         footer = "ENTER: start now    R: re-register    ESC: quit"
         footer_col = (120, 240, 140) if can_start else (170, 160, 190)
         text(self.screen, footer, 22, (self.W // 2, self.H - 24), footer_col, outline=0)
-
-
-def _wrap(msg: str, width: int) -> list[str]:
-    words, lines, cur = msg.split(), [], ""
-    for w in words:
-        if len(cur) + len(w) + 1 > width:
-            lines.append(cur)
-            cur = w
-        else:
-            cur = f"{cur} {w}".strip()
-    if cur:
-        lines.append(cur)
-    return lines

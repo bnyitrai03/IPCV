@@ -14,12 +14,15 @@ from __future__ import annotations
 
 import csv
 import json
+import math
 import platform
 import threading
 import time
 from dataclasses import asdict
 from datetime import datetime
 from pathlib import Path
+
+import numpy as np
 
 from config import LOGS_DIR, Config
 
@@ -51,6 +54,24 @@ def _fmt(v):
     if isinstance(v, float):
         return f"{v:.6f}" if v == v else ""   # NaN -> empty cell
     return v
+
+
+def read_csv(path: Path) -> list[dict]:
+    if not path.is_file():
+        return []
+    with path.open(newline="", encoding="utf-8") as fh:
+        return list(csv.DictReader(fh))
+
+
+def parse_float(v) -> float:
+    try:
+        return float(v)
+    except (TypeError, ValueError):
+        return math.nan
+
+
+def num_col(rows: list[dict], key: str) -> np.ndarray:
+    return np.array([parse_float(r.get(key)) for r in rows])
 
 
 class Session:

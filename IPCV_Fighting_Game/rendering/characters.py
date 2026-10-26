@@ -70,6 +70,8 @@ class FighterRenderer:
         self.animator = Animator()
         self.flash = 0.0
         self.joints: dict[str, tuple[float, float]] = {}
+        self._shadow = pygame.Surface((150, 26), pygame.SRCALPHA)
+        pygame.draw.ellipse(self._shadow, (0, 0, 0, 90), self._shadow.get_rect())
 
     def _col(self, c: Color) -> Color:
         return _mix(c, (255, 255, 255), self.flash) if self.flash > 0 else c
@@ -89,9 +91,7 @@ class FighterRenderer:
         O = s.outline
 
         # Shadow.
-        shadow = pygame.Surface((150, 26), pygame.SRCALPHA)
-        pygame.draw.ellipse(shadow, (0, 0, 0, 90), shadow.get_rect())
-        surf.blit(shadow, (f.x + offset[0] - 75, f.ground_y + offset[1] - 13))
+        surf.blit(self._shadow, (f.x + offset[0] - 75, f.ground_y + offset[1] - 13))
 
         def limb(a, b, r1, r2, color, outline=True):
             if outline:

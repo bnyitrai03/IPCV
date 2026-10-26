@@ -92,13 +92,10 @@ def mirror_pose(image_lms: np.ndarray, world: np.ndarray | None) -> tuple[np.nda
     Inference runs on the *unmirrored* frame, so MediaPipe's left/right labels
     remain the person's true anatomical sides; only the x coordinates flip.
     """
-    img = image_lms.copy()
-    img[:, 0] = 1.0 - img[:, 0]
-    w = None
+    image_lms[:, 0] = 1.0 - image_lms[:, 0]
     if world is not None:
-        w = world.copy()
-        w[:, 0] = -w[:, 0]
-    return img, w
+        world[:, 0] = -world[:, 0]
+    return image_lms, world
 
 
 class MediaPipePoseBackend:
@@ -196,12 +193,12 @@ class PlayerPose:
 
     # ---- accessors (isotropic normalised coords) ----------------------------
     def point(self, idx: int) -> np.ndarray | None:
-        return self.img.value[idx].copy() if self.img.valid[idx] else None
+        return self.img.value[idx] if self.img.valid[idx] else None
 
     def world_point(self, idx: int) -> np.ndarray | None:
         if not self.has_world or not self.world.valid[idx]:
             return None
-        return self.world.value[idx].copy()
+        return self.world.value[idx]
 
     def confidence(self) -> float:
         """Mean raw visibility of the key joints (0..1)."""

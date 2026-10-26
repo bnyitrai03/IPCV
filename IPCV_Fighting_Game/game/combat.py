@@ -48,7 +48,7 @@ def compute_damage(base: float, attacker: Fighter, defender: Fighter) -> tuple[f
 
 def _register_hit(attacker: Fighter, defender: Fighter, base: float, hitstun: float,
                   blockstun: float, knockback: float, point: tuple[float, float],
-                  cfg: GameConfig, attack_name: str, source_ts: float | None) -> GameEvent:
+                  cfg: GameConfig, attack_name: str) -> GameEvent:
     dmg, counter = compute_damage(base, attacker, defender)
     direction = 1 if defender.x >= attacker.x else -1
     blocked, dealt = defender.receive_hit(dmg, hitstun, blockstun, direction, knockback)
@@ -61,7 +61,7 @@ def _register_hit(attacker: Fighter, defender: Fighter, base: float, hitstun: fl
         "attacker": attacker.player_id, "defender": defender.player_id,
         "damage": dealt, "x": point[0], "y": point[1], "attack": attack_name,
         "counter": counter and not blocked, "combo": attacker.combo_count,
-        "ko": defender.state == FighterState.KO, "source_ts": source_ts,
+        "ko": defender.state == FighterState.KO,
     })
 
 
@@ -85,7 +85,7 @@ def resolve_melee(fighters: list[Fighter], cfg: GameConfig) -> list[GameEvent]:
         point = hb.intersection_center(defender.hurtbox())
         events.append(_register_hit(attacker, defender, spec.damage, spec.hitstun,
                                     spec.blockstun, spec.knockback, point, cfg,
-                                    f"{spec.name}_{attack.side}", attack.source_ts))
+                                    f"{spec.name}_{attack.side}"))
     return events
 
 
@@ -109,5 +109,5 @@ def resolve_projectiles(projectiles: list[Projectile], fighters: list[Fighter],
                 p.alive = False
                 point = p.box().intersection_center(defender.hurtbox())
                 events.append(_register_hit(attacker, defender, p.damage, 0.55, 0.3, 420.0,
-                                            point, cfg, "special", None))
+                                            point, cfg, "special"))
     return events

@@ -6,6 +6,7 @@ of MediaPipe on real video. Live accuracy must be measured with the
 evaluation tools and a real webcam.
 """
 from collections import Counter
+from functools import lru_cache
 
 import numpy as np
 
@@ -19,6 +20,7 @@ from vision.synthetic import EXPECTED_EVENTS, SCENARIO_LENGTH, SyntheticScenario
 FPS = 30.0
 
 
+@lru_cache(maxsize=4)
 def run_scenario(duration: float = SCENARIO_LENGTH, seed: int = 0):
     cfg = Config()
     scen = SyntheticScenario(seed=seed)

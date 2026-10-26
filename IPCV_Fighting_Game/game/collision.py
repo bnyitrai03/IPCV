@@ -15,18 +15,6 @@ class Box:
     def from_center(cx: float, cy: float, w: float, h: float) -> "Box":
         return Box(cx - w / 2, cy - h / 2, cx + w / 2, cy + h / 2)
 
-    @property
-    def width(self) -> float:
-        return self.right - self.left
-
-    @property
-    def height(self) -> float:
-        return self.bottom - self.top
-
-    @property
-    def center(self) -> tuple[float, float]:
-        return ((self.left + self.right) / 2, (self.top + self.bottom) / 2)
-
     def intersects(self, other: "Box") -> bool:
         return (self.left < other.right and other.left < self.right
                 and self.top < other.bottom and other.top < self.bottom)

@@ -105,21 +105,16 @@ class FightSession:
     def _collect_inputs(self, snapshot: VisionSnapshot | None,
                         events: list[GestureEvent]) -> None:
         for pid in (0, 1):
-            inp = PlayerInput()
-            if snapshot is not None and pid < len(snapshot.players):
-                p = snapshot.players[pid]
-                if p.state == TrackState.ACTIVE:
-                    inp.move = p.move
-                    inp.block = p.block
-            self.pending[pid] = self.pending[pid].merge(inp)
+            p = snapshot.players[pid] if snapshot is not None and pid < len(snapshot.players) else None
+            active = p is not None and p.state == TrackState.ACTIVE
             # Held values must reflect the latest snapshot, not an OR over frames.
-            self.pending[pid].move = inp.move
-            self.pending[pid].block = inp.block
+            self.pending[pid].move = max(-1.0, min(1.0, p.move)) if active else 0.0
+            self.pending[pid].block = bool(p.block) if active else False
         for ev in events:
             if ev.gesture in ONE_SHOT_ACTIONS:
-                vi = PlayerInput(**{ev.gesture: True})
-                vi.source_ts[ev.gesture] = ev.capture_ts
-                self.pending[ev.player_id] = self.pending[ev.player_id].merge(vi)
+                inp = self.pending[ev.player_id]
+                setattr(inp, ev.gesture, True)
+                inp.source_ts.setdefault(ev.gesture, ev.capture_ts)
             self.pending_vision.append(ev)
 
     def step(self, dt: float) -> list[GameEvent]:
@@ -133,6 +128,26 @@ class FightSession:
     def take_vision_events(self) -> list[GestureEvent]:
         events, self.pending_vision = self.pending_vision, []
         return events
+
+    def resolve_vision_events(self, game_events: list[GameEvent],
+                              phase_before: Phase) -> list[tuple[GestureEvent, str]]:
+        """Pair drained gesture events with their game outcome (for logging)."""
+        executed = {e.data.get("source_ts"): e.data.get("action")
+                    for e in game_events
+                    if e.kind == "action" and e.data.get("source_ts") is not None}
+        results = []
+        for ev in self.take_vision_events():
+            if ev.gesture in ("block_start", "block_end"):
+                result = "held_state"
+            elif phase_before != Phase.FIGHT:
+                result = "ignored_not_fighting"
+            else:
+                act = executed.get(ev.capture_ts)
+                result = ("executed" if act and act != "special_denied"
+                          else "denied_no_energy" if act == "special_denied"
+                          else "not_executed_busy")
+            results.append((ev, result))
+        return results
 
     # ------------------------------------------------------------- control
     def pause(self) -> None:

@@ -10,14 +10,13 @@
 """
 from __future__ import annotations
 
-import csv
 import math
 from collections import defaultdict
 from pathlib import Path
 
 import numpy as np
 
-from evaluation.session import Session
+from evaluation.session import Session, parse_float, read_csv
 from vision.gesture_recognition import GestureEvent
 
 ATTACK_GESTURES = ("hook_left", "hook_right",
@@ -43,23 +42,9 @@ class GestureLogger:
 
 
 # ====================================================================== analysis
-def _read(path: Path) -> list[dict]:
-    if not path.is_file():
-        return []
-    with path.open(newline="", encoding="utf-8") as fh:
-        return list(csv.DictReader(fh))
-
-
-def _f(v) -> float:
-    try:
-        return float(v)
-    except (TypeError, ValueError):
-        return math.nan
-
-
 def analyze_gestures(session_dir: Path) -> dict:
     out: dict = {}
-    g = _read(session_dir / "gestures.csv")
+    g = read_csv(session_dir / "gestures.csv")
     if g:
         per = defaultdict(list)
         for r in g:
@@ -73,7 +58,7 @@ def analyze_gestures(session_dir: Path) -> dict:
                 continue
             stats = {}
             for key in ("recognition_latency_ms", "command_latency_ms", "processing_ms"):
-                vals = np.array([_f(r[key]) for r in rows])
+                vals = np.array([parse_float(r[key]) for r in rows])
                 vals = vals[np.isfinite(vals)]
                 if vals.size:
                     stats[f"{key}_mean"] = float(vals.mean())

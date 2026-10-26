@@ -69,7 +69,6 @@ class GestureEvent:
     capture_ts: float         # camera timestamp of the frame that confirmed it
     onset_ts: float           # camera timestamp of the frame where the motion started
     processed_ts: float       # perf_counter when the recogniser emitted it
-    values: dict = field(default_factory=dict)
 
 
 @dataclass
@@ -262,7 +261,7 @@ class GestureRecognizer:
 
     # ------------------------------------------------------------ attack logic
     def _detect_uppercut(self, arm: ArmTracker, cur: ArmSample,
-                         geo: dict) -> tuple[ArmSample, dict] | None:
+                         geo: dict) -> ArmSample | None:
         """Fast rise (up and forward) ending at about head height with the arm
         reaching out. Measured from the start of the rise = the recent point from
         which the fist rose FASTEST (for a dip-then-rise: the bottom of the dip)."""
@@ -287,7 +286,7 @@ class GestureRecognizer:
                 and rise >= cfg.uppercut_min_rise and rise >= abs(dx)          # mostly upwards
                 and cur.pos[1] <= nose[1] + cfg.uppercut_end_below_nose        # ends at head height
                 and cur.reach >= cfg.uppercut_min_reach):                      # arm reaches out
-            return start, {"dx": dx, "dy": -rise, "speed": speed, "reach": cur.reach, "dt": dt}
+            return start
         return None
 
     @staticmethod
@@ -321,7 +320,7 @@ class GestureRecognizer:
 
         # ---- pending uppercut: cancel if it turns into a two-arm raise ----
         if arm.pending_uppercut is not None:
-            since, onset, sample, pvals = arm.pending_uppercut
+            since, onset, sample = arm.pending_uppercut
             # Other fist ALSO above the head = special pose; a guard hand is fine.
             other_up = other is not None and geo["nose"] is not None and \
                 other.pos[1] < geo["nose"][1] - 0.1
@@ -333,8 +332,7 @@ class GestureRecognizer:
                 return None
             if capture_ts - since >= cfg.uppercut_confirm_s:
                 arm.pending_uppercut = None
-                return self._fire(arm, "uppercut", onset, sample, now,
-                                  {**pvals, "confirm_ms": (capture_ts - since) * 1000})
+                return self._fire(arm, "uppercut", onset, sample, now)
             return None
 
         if arm.state == ArmState.RECOVER:
@@ -348,18 +346,16 @@ class GestureRecognizer:
             return None
 
         # ARMED: look for either attack in the recent motion trail.
-        hook = self._detect_hook(arm, cur, geo)
-        if hook is not None and not suppress:
-            onset, vals = hook
-            return self._fire(arm, "hook", onset, cur, now, vals)
-        upper = self._detect_uppercut(arm, cur, geo)
-        if upper is not None and not suppress:
-            onset, vals = upper
-            arm.pending_uppercut = (capture_ts, onset, cur, vals)
+        onset = self._detect_hook(arm, cur, geo)
+        if onset is not None and not suppress:
+            return self._fire(arm, "hook", onset, cur, now)
+        onset = self._detect_uppercut(arm, cur, geo)
+        if onset is not None and not suppress:
+            arm.pending_uppercut = (capture_ts, onset, cur)
         return None
 
     def _detect_hook(self, arm: ArmTracker, cur: ArmSample,
-                     geo: dict) -> tuple[ArmSample, dict] | None:
+                     geo: dict) -> ArmSample | None:
         """Hook = elbow bent ~90 deg + fast inward horizontal sweep, measured from the
         start of the sweep (for a hook from the guard: the turning point out -> in)."""
         cfg = self.cfg
@@ -397,16 +393,14 @@ class GestureRecognizer:
         if (inward >= cfg.hook_min_dx and inward >= cfg.hook_dominance * abs(dy)
                 and speed >= cfg.attack_min_speed and bent
                 and -1.3 <= apex_h <= 0.9 and -1.1 <= end_h <= 0.7):   # chest-head height
-            return apex, {"dx": inward, "dy": dy, "speed": speed, "dt": dt,
-                          "elbow_deg": elbow, "reach": cur.reach}
+            return apex
         return None
 
     def _fire(self, arm: ArmTracker, kind: str, onset: ArmSample, cur: ArmSample,
-              now: float, vals: dict) -> GestureEvent:
+              now: float) -> GestureEvent:
         arm.state = ArmState.RECOVER
         arm.last_fire = now
         arm.onset = onset          # re-arm reference: where the attack started
         arm.trail.clear()
         arm.pending_uppercut = None
-        return GestureEvent(self.player_id, f"{kind}_{arm.side}", cur.t, onset.t, now,
-                            {k: float(v) for k, v in vals.items() if isinstance(v, (int, float))})
+        return GestureEvent(self.player_id, f"{kind}_{arm.side}", cur.t, onset.t, now)

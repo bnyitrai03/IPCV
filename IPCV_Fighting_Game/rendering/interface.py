@@ -25,11 +25,36 @@ PANEL_BG = (24, 20, 34)
 class Fonts:
     def __init__(self) -> None:
         self._cache: dict[int, pygame.font.Font] = {}
+        self._surfaces: dict[tuple, pygame.Surface] = {}
 
     def get(self, size: int) -> pygame.font.Font:
         if size not in self._cache:
             self._cache[size] = pygame.font.Font(None, size)
         return self._cache[size]
+
+    def render(self, msg: str, size: int, color, outline: int,
+               ocolor) -> pygame.Surface:
+        key = (msg, size, color, outline, ocolor)
+        surf = self._surfaces.get(key)
+        if surf is not None:
+            return surf
+        font = self.get(size)
+        fg = font.render(msg, True, color)
+        if outline:
+            o = font.render(msg, True, ocolor)
+            w, h = fg.get_size()
+            surf = pygame.Surface((w + 2 * outline, h + 2 * outline), pygame.SRCALPHA)
+            for dx in (-outline, 0, outline):
+                for dy in (-outline, 0, outline):
+                    if dx or dy:
+                        surf.blit(o, (dx + outline, dy + outline))
+            surf.blit(fg, (outline, outline))
+        else:
+            surf = fg
+        if len(self._surfaces) > 512:
+            self._surfaces.clear()
+        self._surfaces[key] = surf
+        return surf
 
 
 FONTS: Fonts | None = None
@@ -44,21 +69,22 @@ def fonts() -> Fonts:
 
 def text(surf, msg, size, pos, color=WHITE, anchor="center", outline=2, ocolor=DARK,
          alpha: int = 255) -> pygame.Rect:
-    font = fonts().get(size)
-    img = font.render(msg, True, color)
-    rect = img.get_rect(**{anchor: pos})
-    if outline:
-        o = font.render(msg, True, ocolor)
-        if alpha < 255:
-            o.set_alpha(alpha)
-        for dx in (-outline, 0, outline):
-            for dy in (-outline, 0, outline):
-                if dx or dy:
-                    surf.blit(o, rect.move(dx, dy))
+    img = fonts().render(msg, size, color, outline, ocolor)
+    w = img.get_width() - (2 * outline if outline else 0)
+    h = img.get_height() - (2 * outline if outline else 0)
+    rect = pygame.Rect(0, 0, w, h)
+    setattr(rect, anchor, pos)
     if alpha < 255:
         img.set_alpha(alpha)
-    surf.blit(img, rect)
+    surf.blit(img, (rect.x - outline, rect.y - outline) if outline else rect.topleft)
+    if alpha < 255:
+        img.set_alpha(255)
     return rect
+
+
+def bgr_to_surface(bgr: np.ndarray) -> pygame.Surface:
+    rgb = cv2.cvtColor(bgr, cv2.COLOR_BGR2RGB)
+    return pygame.image.frombuffer(rgb, (rgb.shape[1], rgb.shape[0]), "RGB")
 
 
 # ======================================================================= HUD
@@ -176,6 +202,7 @@ class Banner:
         self.time = 0.0
         self.duration = 0.0
         self.color = WHITE
+        self._band: pygame.Surface | None = None
 
     def show(self, msg: str, duration: float = 1.4, sub: str = "", color=WHITE) -> None:
         self.msg, self.sub, self.duration, self.time, self.color = msg, sub, duration, 0.0, color
@@ -190,9 +217,10 @@ class Banner:
         scale = 1.6 - 0.6 * min(1.0, t / 0.18)
         alpha = int(255 * min(1.0, (self.duration - t) / 0.3))
         size = int(110 * scale)
-        band = pygame.Surface((surf.get_width(), 150), pygame.SRCALPHA)
-        band.fill((10, 6, 16, int(140 * alpha / 255)))
-        surf.blit(band, (0, center[1] - 75))
+        if self._band is None or self._band.get_width() != surf.get_width():
+            self._band = pygame.Surface((surf.get_width(), 150), pygame.SRCALPHA)
+        self._band.fill((10, 6, 16, int(140 * alpha / 255)))
+        surf.blit(self._band, (0, center[1] - 75))
         text(surf, self.msg, size, center, self.color, outline=4, alpha=alpha)
         if self.sub:
             text(surf, self.sub, 34, (center[0], center[1] + 55), GOLD, alpha=alpha)
@@ -208,6 +236,8 @@ class WebcamPanel:
         self.crop_c: np.ndarray | None = None
         self.crop_w = 0.5
         self.show_pose = True
+        self._status_bar = pygame.Surface((rect.width, 24), pygame.SRCALPHA)
+        self._status_bar.fill((10, 8, 16, 190))
 
     def _crop_target(self, p: PlayerSnapshot, aspect: float) -> tuple[np.ndarray, float]:
         """Crop centre (normalised image coords) and width (normalised-x): head and
@@ -254,9 +284,7 @@ class WebcamPanel:
             p.state, (255, 90, 90))
         face_col = {FaceStatus.TRACKED: (90, 230, 120), FaceStatus.PREDICTED: (255, 190, 60),
                     FaceStatus.POSE_FALLBACK: (120, 190, 255)}.get(p.face.status, (255, 90, 90))
-        bar = pygame.Surface((r.width, 24), pygame.SRCALPHA)
-        bar.fill((10, 8, 16, 190))
-        surf.blit(bar, (r.left, r.bottom - 24))
+        surf.blit(self._status_bar, (r.left, r.bottom - 24))
         text(surf, f"BODY {state} {p.confidence:.2f}", 19, (r.left + 8, r.bottom - 12), col,
              "midleft", outline=0)
         text(surf, f"FACE {p.face.status.value.upper()}", 19, (r.right - 8, r.bottom - 12),
@@ -311,9 +339,7 @@ class WebcamPanel:
         if p is not None and p.state == TrackState.LOST:
             cv2.putText(panel, "TRACKING LOST", (10, r.height // 2), cv2.FONT_HERSHEY_SIMPLEX,
                         0.7, (60, 190, 255), 2, cv2.LINE_AA)
-        rgb = cv2.cvtColor(panel, cv2.COLOR_BGR2RGB)
-        frame = pygame.image.frombuffer(rgb.tobytes(), (r.width, r.height), "RGB")
-        surf.blit(frame, r.topleft)
+        surf.blit(bgr_to_surface(panel), r.topleft)
 
     @staticmethod
     def _draw_pose(panel, p: PlayerSnapshot, to_panel) -> None:
@@ -333,10 +359,16 @@ class WebcamPanel:
 
 
 # ============================================================ debug overlay
+_DEBUG_BG: dict[tuple[int, int], pygame.Surface] = {}
+
+
 def draw_debug(surf: pygame.Surface, snap: VisionSnapshot | None, perf_lines: list[str],
                rect: pygame.Rect) -> None:
-    bg = pygame.Surface(rect.size, pygame.SRCALPHA)
-    bg.fill((8, 6, 14, 200))
+    bg = _DEBUG_BG.get(rect.size)
+    if bg is None:
+        bg = pygame.Surface(rect.size, pygame.SRCALPHA)
+        bg.fill((8, 6, 14, 200))
+        _DEBUG_BG[rect.size] = bg
     surf.blit(bg, rect.topleft)
     y = rect.top + 10
     for line in perf_lines:
@@ -378,8 +410,55 @@ def draw_debug(surf: pygame.Surface, snap: VisionSnapshot | None, perf_lines: li
         tw = int(th * W / H)
     if th > 20:
         small = cv2.resize(img, (tw, th))
-        rgb = cv2.cvtColor(small, cv2.COLOR_BGR2RGB)
-        surf.blit(pygame.image.frombuffer(rgb.tobytes(), (tw, th), "RGB"), (rect.left + 10, y + 6))
+        surf.blit(bgr_to_surface(small), (rect.left + 10, y + 6))
+
+
+# =========================================================== calibration view
+def draw_camera_view(surf: pygame.Surface, snap: VisionSnapshot | None,
+                     rect: pygame.Rect) -> None:
+    pygame.draw.rect(surf, DARK, rect.inflate(10, 10), border_radius=10)
+    if snap is None or snap.image is None:
+        text(surf, "Starting camera...", 40, rect.center, WHITE)
+        return
+    img = snap.image.copy()
+    h, w = img.shape[:2]
+    colors = [(90, 220, 255), (255, 200, 90)]
+    for p in snap.players:
+        if p.state != TrackState.ACTIVE:
+            continue
+        lm = p.landmarks
+        for a, b in SKELETON_EDGES:
+            if np.isnan(lm[a]).any() or np.isnan(lm[b]).any():
+                continue
+            cv2.line(img, (int(lm[a, 0] * w), int(lm[a, 1] * h)),
+                     (int(lm[b, 0] * w), int(lm[b, 1] * h)), colors[p.pid], 3, cv2.LINE_AA)
+        cx = int(p.center[0] * w)
+        top = int(p.bbox[1] * h) if p.bbox else int(p.center[1] * h)
+        label = f"P{p.pid + 1} {STYLES[p.pid].name}"
+        (tw, _), _ = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.8, 2)
+        org = (cx - tw // 2, max(24, top - 30))
+        cv2.putText(img, label, org, cv2.FONT_HERSHEY_SIMPLEX, 0.8, (20, 20, 20), 5, cv2.LINE_AA)
+        cv2.putText(img, label, org, cv2.FONT_HERSHEY_SIMPLEX, 0.8, colors[p.pid], 2, cv2.LINE_AA)
+    th = rect.height
+    tw = int(th * w / h)
+    if tw > rect.width:
+        tw = rect.width
+        th = int(tw * h / w)
+    small = cv2.resize(img, (tw, th))
+    surf.blit(bgr_to_surface(small), (rect.centerx - tw // 2, rect.top))
+
+
+def wrap_text(msg: str, width: int) -> list[str]:
+    words, lines, cur = msg.split(), [], ""
+    for w in words:
+        if len(cur) + len(w) + 1 > width:
+            lines.append(cur)
+            cur = w
+        else:
+            cur = f"{cur} {w}".strip()
+    if cur:
+        lines.append(cur)
+    return lines
 
 
 def status_for(f: Fighter, hit_flash: float, winner: bool, special_progress: float) -> PlayerStatus:

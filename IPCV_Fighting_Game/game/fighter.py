@@ -70,7 +70,6 @@ class ActiveAttack:
     spec: AttackSpec
     side: str             # "left" / "right" (which hand)
     has_hit: bool = False
-    source_ts: float | None = None
 
 
 class Fighter:
@@ -95,7 +94,7 @@ class Fighter:
         self.attack: ActiveAttack | None = None
         self.special_fired = False
         self.pending_special: bool = False
-        self.buffer: list[tuple[str, float, float | None]] = []  # (action, age, src_ts)
+        self.buffer: list[tuple[str, float]] = []  # (action, age)
         self.walk_dir = 0.0
         self.combo_count = 0
         self.combo_timer = 0.0
@@ -148,14 +147,14 @@ class Fighter:
         """Queue one-shot actions and update held actions. Returns started actions."""
         for action in ONE_SHOT_ACTIONS:
             if getattr(inp, action):
-                self.buffer.append((action, 0.0, inp.source_ts.get(action)))
+                self.buffer.append((action, 0.0))
         self.walk_dir = inp.move
         started: list[str] = []
 
         if self.can_act:
             # Attacks take priority over blocking/walking.
             while self.buffer:
-                action, _age, src_ts = self.buffer.pop(0)
+                action, _age = self.buffer.pop(0)
                 if action == "special":
                     if self.energy >= self.cfg.special_cost:
                         self.energy -= self.cfg.special_cost
@@ -166,7 +165,7 @@ class Fighter:
                     started.append("special_denied")
                     continue
                 kind, side = action.split("_")
-                self.attack = ActiveAttack(ATTACKS[kind], side, source_ts=src_ts)
+                self.attack = ActiveAttack(ATTACKS[kind], side)
                 self._set_state(FighterState.PUNCH)
                 started.append(action)
                 break
@@ -186,7 +185,7 @@ class Fighter:
         self.total_time += dt
         self.state_time += dt
         # Expire buffered inputs.
-        self.buffer = [(a, age + dt, ts) for a, age, ts in self.buffer
+        self.buffer = [(a, age + dt) for a, age in self.buffer
                        if age + dt <= self.cfg.input_buffer_s]
         # Energy regen.
         if self.state not in (FighterState.KO,):

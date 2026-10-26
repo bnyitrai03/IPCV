@@ -15,14 +15,14 @@ Require MANUAL ground truth (operator key presses, see README):
 """
 from __future__ import annotations
 
-import csv
+import json
 import math
 from collections import Counter, defaultdict
 from pathlib import Path
 
 import numpy as np
 
-from evaluation.session import Session
+from evaluation.session import Session, num_col, parse_float, read_csv
 from vision.pipeline import VisionSnapshot
 from vision.pose_tracking import KEY_JOINTS
 
@@ -85,7 +85,7 @@ class TrackingLogger:
         self.frames.write(row)
         for ev in snap.tracker_events:
             self.events.write({"t": s.rel(ev.ts), "player": ev.player + 1 if ev.player >= 0 else 0,
-                               "event": ev.kind, "details": ev.details})
+                               "event": ev.kind, "details": json.dumps(ev.details)})
 
     def annotate(self, ts: float, key: str, label: str) -> None:
         if label in ("stationary_start", "stationary_end"):
@@ -94,20 +94,6 @@ class TrackingLogger:
 
 
 # ====================================================================== analysis
-def _read(path: Path) -> list[dict]:
-    if not path.is_file():
-        return []
-    with path.open(newline="", encoding="utf-8") as fh:
-        return list(csv.DictReader(fh))
-
-
-def _num(v: str) -> float:
-    try:
-        return float(v)
-    except (TypeError, ValueError):
-        return math.nan
-
-
 def _segments(mask: np.ndarray) -> list[tuple[int, int]]:
     segs, start = [], None
     for i, m in enumerate(mask):
@@ -147,13 +133,13 @@ def _jitter(xs: np.ndarray, ys: np.ndarray, scale: np.ndarray, mask: np.ndarray,
 
 
 def analyze_tracking(session_dir: Path) -> dict:
-    rows = _read(session_dir / "vision_frames.csv")
-    events = _read(session_dir / "tracker_events.csv")
-    ann = _read(session_dir / "annotations.csv")
+    rows = read_csv(session_dir / "vision_frames.csv")
+    events = read_csv(session_dir / "tracker_events.csv")
+    ann = read_csv(session_dir / "annotations.csv")
     out: dict = {"frames": len(rows)}
     if not rows:
         return out
-    col = lambda k: np.array([_num(r.get(k)) for r in rows])
+    col = lambda k: num_col(rows, k)
     stationary = col("stationary") > 0.5
     duration = col("t")[-1] - col("t")[0] if len(rows) > 1 else math.nan
     out["duration_s"] = duration
@@ -208,12 +194,23 @@ def analyze_tracking(session_dir: Path) -> dict:
                                    for (p, e), n in sorted(ev_counts.items())}
     gaps = defaultdict(list)
     for e in events:
-        d = e.get("details", "")
+        raw = e.get("details", "")
+        if not raw:
+            continue
+        try:
+            details = json.loads(raw)
+        except (TypeError, ValueError):
+            details = None
+        if details is not None:
+            for key in ("gap_s", "absent_s"):
+                if key in details:
+                    gaps[key].append(float(details[key]))
+            continue
+        # Older sessions stored the dict with repr(); keep them analysable.
         for key in ("gap_s", "absent_s"):
-            if key in d:
+            if key in raw:
                 try:
-                    val = float(d.split(f"'{key}': ")[1].split(",")[0].split("}")[0])
-                    gaps[key].append(val)
+                    gaps[key].append(float(raw.split(f"'{key}': ")[1].split(",")[0].split("}")[0]))
                 except (IndexError, ValueError):
                     pass
     out["occlusion_recovery_gap_s_mean"] = float(np.mean(gaps["gap_s"])) if gaps["gap_s"] else math.nan
@@ -240,8 +237,8 @@ def _reentry_times(rows: list[dict]) -> list[float]:
     waiting: dict[int, float | None] = {1: None, 2: None}
     prev_state = {1: "", 2: ""}
     for r in rows:
-        t = _num(r["t"])
-        n_poses = _num(r["n_poses"])
+        t = parse_float(r["t"])
+        n_poses = parse_float(r["n_poses"])
         states = {p: r[f"p{p}_state"] for p in PLAYERS}
         n_active = sum(s == "active" for s in states.values())
         for p in PLAYERS:

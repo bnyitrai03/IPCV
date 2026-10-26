@@ -38,6 +38,8 @@ class FloatingText:
     color: tuple[int, int, int]
     life: float
     size: int
+    img: pygame.Surface | None = None
+    shadow: pygame.Surface | None = None
 
 
 class EffectsManager:
@@ -52,6 +54,7 @@ class EffectsManager:
         self.rng = random.Random(3)
         self._fonts: dict[int, pygame.font.Font] = {}
         self._glow_cache: dict[tuple, pygame.Surface] = {}
+        self._flash_surf: pygame.Surface | None = None
 
     def _font(self, size: int) -> pygame.font.Font:
         if size not in self._fonts:
@@ -132,7 +135,10 @@ class EffectsManager:
 
     def text(self, text: str, x: float, y: float, color=(255, 240, 120), size: int = 36,
              life: float = 0.9) -> None:
-        self.texts.append(FloatingText(text, x, y, color, life, size))
+        font = self._font(size)
+        self.texts.append(FloatingText(text, x, y, color, life, size,
+                                       font.render(text, True, color),
+                                       font.render(text, True, (20, 10, 20))))
 
     def shake(self, magnitude: float, duration: float) -> None:
         self.shake_mag = max(self.shake_mag, magnitude)
@@ -208,10 +214,9 @@ class EffectsManager:
                 ex, ey = x - p.vx * 0.02, y - p.vy * 0.02
                 pygame.draw.line(surf, p.color, (x, y), (ex, ey), max(1, int(p.size * k + 1)))
         for t in self.texts:
-            font = self._font(t.size)
             a = min(1.0, t.life * 3)
-            img = font.render(t.text, True, t.color)
-            shadow = font.render(t.text, True, (20, 10, 20))
+            img = t.img if t.img is not None else self._font(t.size).render(t.text, True, t.color)
+            shadow = t.shadow if t.shadow is not None else self._font(t.size).render(t.text, True, (20, 10, 20))
             img.set_alpha(int(255 * a))
             shadow.set_alpha(int(255 * a))
             rect = img.get_rect(center=(t.x + ox, t.y + oy))
@@ -220,7 +225,8 @@ class EffectsManager:
 
     def draw_flash(self, surf: pygame.Surface) -> None:
         if self.flash_alpha > 1:
-            overlay = pygame.Surface(surf.get_size())
-            overlay.fill(self.flash_color)
-            overlay.set_alpha(int(min(255, self.flash_alpha)))
-            surf.blit(overlay, (0, 0))
+            if self._flash_surf is None or self._flash_surf.get_size() != surf.get_size():
+                self._flash_surf = pygame.Surface(surf.get_size())
+            self._flash_surf.fill(self.flash_color)
+            self._flash_surf.set_alpha(int(min(255, self.flash_alpha)))
+            surf.blit(self._flash_surf, (0, 0))

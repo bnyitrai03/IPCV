@@ -36,13 +36,11 @@ class FaceSnapshot:
     status: FaceStatus
     center: tuple[float, float] | None       # normalised image coords
     forehead: tuple[float, float] | None
-    chin: tuple[float, float] | None
     scale: float                             # in normalised-x units
     roll: float
     yaw: float
     alpha: float
     alignment_error: float
-    step_displacement: float
 
 
 @dataclass
@@ -71,7 +69,6 @@ class PlayerSnapshot:
 class VisionSnapshot:
     frame_id: int
     capture_ts: float
-    processed_ts: float
     image: np.ndarray | None                 # mirrored BGR at inference resolution
     players: list[PlayerSnapshot]
     num_poses: int
@@ -224,7 +221,7 @@ class VisionPipeline:
                 if len(self._fps_times) > 1:
                     span = self._fps_times[-1] - self._fps_times[0]
                     self.vision_fps = (len(self._fps_times) - 1) / span if span > 0 else 0.0
-                snap = self._make_snapshot(last_id, capture_ts, processed, display, poses,
+                snap = self._make_snapshot(last_id, capture_ts, display, poses,
                                            faces, timings,
                                            self.tracker.events[n_events_before:])
                 with self._lock:
@@ -256,7 +253,7 @@ class VisionPipeline:
         return cv2.resize(img, (target_w, int(round(h * target_w / w))),
                           interpolation=cv2.INTER_AREA)
 
-    def _make_snapshot(self, frame_id, capture_ts, processed, display, poses, faces, timings,
+    def _make_snapshot(self, frame_id, capture_ts, display, poses, faces, timings,
                        new_events) -> VisionSnapshot:
         assert self.tracker is not None
         aspect = self.tracker.aspect
@@ -278,9 +275,8 @@ class VisionPipeline:
                 status=f.status,
                 center=img_pt(f.center) if f.visible else None,
                 forehead=img_pt(f.forehead) if f.visible else None,
-                chin=img_pt(f.chin) if f.visible else None,
                 scale=f.scale, roll=f.roll, yaw=f.yaw, alpha=f.alpha,
-                alignment_error=f.alignment_error, step_displacement=f.step_displacement)
+                alignment_error=f.alignment_error)
             players.append(PlayerSnapshot(
                 pid=tr.id, state=tr.state, landmarks=lm,
                 observed=tr.pose.img.observed.copy(),
@@ -297,7 +293,7 @@ class VisionPipeline:
                 raw_landmarks=raw,
                 face_raw=img_pt(f.raw.center) if f.raw is not None else None))
         return VisionSnapshot(
-            frame_id=frame_id, capture_ts=capture_ts, processed_ts=processed,
+            frame_id=frame_id, capture_ts=capture_ts,
             image=display, players=players, num_poses=len(poses),
             num_faces=len(faces) if faces is not None else -1, timings_ms=timings,
             overlap=self.tracker.overlap, registered=self.tracker.all_registered,

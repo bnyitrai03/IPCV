@@ -66,6 +66,10 @@ def _blend(base: np.ndarray, overlay: np.ndarray, alpha: float) -> None:
     cv2.addWeighted(overlay, alpha, base, 1 - alpha, 0, dst=base)
 
 
+_HEXAGON = [(math.cos(a) * 1.9, math.sin(a) * 2.1 + 0.4)
+            for a in np.linspace(0, math.tau, 7)[:-1] + math.pi / 6]
+
+
 def health_color(h: float) -> tuple[int, int, int]:
     """BGR: green (full) -> yellow -> red (low)."""
     h = max(0.0, min(1.0, h))
@@ -100,8 +104,9 @@ def draw_face_effects(img: np.ndarray, face: FaceSnapshot, to_panel, panel_scale
         if face.forehead is not None:
             fh = np.array(to_panel(face.forehead), dtype=np.float64)
             # Express the anchor in face units so the band follows head pitch.
-            local = np.linalg.solve(F.R, fh - F.c)
-            v0 = float(local[1] / s) * 0.62
+            d = fh - F.c
+            local_y = -d[0] * math.sin(F.roll) + d[1] * math.cos(F.roll)
+            v0 = float(local_y / s) * 0.62
         else:
             v0 = -0.75
         band = F.poly([(-1.25, v0 - 0.16), (1.25, v0 - 0.16), (1.22, v0 + 0.16), (-1.22, v0 + 0.16)])
@@ -127,10 +132,8 @@ def draw_face_effects(img: np.ndarray, face: FaceSnapshot, to_panel, panel_scale
             bolt = [(sg * 0.7, -1.0), (sg * 1.0, -1.6), (sg * 0.85, -1.55), (sg * 1.25, -2.25),
                     (sg * 0.95, -1.75), (sg * 1.1, -1.8), (sg * 0.75, -1.1)]
             cv2.fillPoly(overlay, [F.poly(bolt)], (60, 230, 255), AA)
-    _blend(img, overlay, 0.82 * alpha)
 
     # ---------------------------------------------------- status effects
-    overlay = img.copy()
     # Health ring gauge above the head.
     ring_c = F.pt(0, -2.2)
     rad = max(4, int(s * 0.55))
@@ -141,9 +144,7 @@ def draw_face_effects(img: np.ndarray, face: FaceSnapshot, to_panel, panel_scale
                     -90 + 360 * status.health, health_color(status.health),
                     max(2, int(s * 0.12)), AA)
     if status.blocking:
-        hexagon = [(math.cos(a) * 1.9, math.sin(a) * 2.1 + 0.4)
-                   for a in np.linspace(0, math.tau, 7)[:-1] + math.pi / 6]
-        cv2.fillConvexPoly(overlay, F.poly(hexagon, depth=0.8), (255, 170, 60), AA)
+        cv2.fillConvexPoly(overlay, F.poly(_HEXAGON, depth=0.8), (255, 170, 60), AA)
     if status.special_charge > 0:
         for k in range(10):
             a = clock * 6 + k * math.tau / 10
@@ -160,15 +161,18 @@ def draw_face_effects(img: np.ndarray, face: FaceSnapshot, to_panel, panel_scale
         crown = [(-0.9, -1.5), (-0.9, -2.2), (-0.45, -1.8), (0, -2.4), (0.45, -1.8),
                  (0.9, -2.2), (0.9, -1.5)]
         cv2.fillPoly(overlay, [F.poly(crown)], (40, 200, 255), AA)
-    _blend(img, overlay, 0.6 * max(alpha, 0.5))
+    _blend(img, overlay, 0.78 * max(alpha, 0.5))
 
     if status.hit_flash > 0:
         x0, y0 = F.pt(-1.8, -1.5)
         x1, y1 = F.pt(1.8, 2.4)
-        tint = img.copy()
-        cv2.rectangle(tint, (min(x0, x1), min(y0, y1)), (max(x0, x1), max(y0, y1)),
-                      (40, 40, 255), -1)
-        _blend(img, tint, 0.35 * status.hit_flash)
+        x0, x1 = sorted((max(0, x0), min(img.shape[1], x1)))
+        y0, y1 = sorted((max(0, y0), min(img.shape[0], y1)))
+        if x1 > x0 and y1 > y0:
+            roi = img[y0:y1, x0:x1]
+            tint = np.empty_like(roi)
+            tint[:] = (40, 40, 255)
+            _blend(roi, tint, 0.35 * status.hit_flash)
 
 
 def _star(img, center, r, color) -> None:

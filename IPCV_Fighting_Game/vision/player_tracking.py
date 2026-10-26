@@ -141,8 +141,33 @@ def hist_distance(a: np.ndarray | None, b: np.ndarray | None) -> float:
     """Bhattacharyya distance in [0, 1]; 0.5 (uninformative) if unavailable."""
     if a is None or b is None:
         return 0.5
-    return float(cv2.compareHist(a.astype(np.float32), b.astype(np.float32),
-                                 cv2.HISTCMP_BHATTACHARYYA))
+    return float(cv2.compareHist(a, b, cv2.HISTCMP_BHATTACHARYYA))
+
+
+def _solve_assignment(costs: list[list[float]], miss_cost: float) -> dict[int, int]:
+    """Optimal track->detection assignment (brute force; n is tiny)."""
+    n_t = len(costs)
+    n_d = len(costs[0]) if n_t else 0
+    options = list(range(n_d)) + [None]
+    best_cost, best = INF, {}
+    for combo in itertools.product(options, repeat=n_t):
+        used = [c for c in combo if c is not None]
+        if len(used) != len(set(used)):
+            continue
+        total, mapping, ok = 0.0, {}, True
+        for ti, di in enumerate(combo):
+            if di is None:
+                total += miss_cost
+                continue
+            c = costs[ti][di]
+            if c >= INF:
+                ok = False
+                break
+            total += c
+            mapping[ti] = di
+        if ok and total < best_cost:
+            best_cost, best = total, mapping
+    return best
 
 
 class PlayerTracker:
@@ -219,30 +244,7 @@ class PlayerTracker:
         """
         miss = self.tcfg.w_position * self.tcfg.position_gate + 1.0
         costs = [[self._pair_cost(tr, inf, t) for inf in infos] for tr in tracks]
-        n_t, n_d = len(tracks), len(infos)
-        options = list(range(n_d)) + [None]
-        results: list[tuple[float, dict[int, int]]] = []
-        for combo in itertools.product(options, repeat=n_t):
-            used = [c for c in combo if c is not None]
-            if len(used) != len(set(used)):
-                continue
-            total, mapping, ok = 0.0, {}, True
-            for ti, di in enumerate(combo):
-                if di is None:
-                    total += miss
-                else:
-                    c = costs[ti][di]
-                    if c >= INF:
-                        ok = False
-                        break
-                    total += c
-                    mapping[ti] = di
-            if ok:
-                results.append((total, mapping))
-        if not results:
-            return {}
-        results.sort(key=lambda r: r[0])
-        return results[0][1]
+        return _solve_assignment(costs, miss)
 
     # ------------------------------------------------------------------ update
     def update(self, detections: list[PoseDetection], faces: list[FaceDetection] | None,
@@ -344,7 +346,7 @@ class PlayerTracker:
                 tr.hist = info.hist.copy()
             else:
                 r = self.tcfg.appearance_update_rate
-                tr.hist = (1 - r) * tr.hist + r * info.hist
+                cv2.addWeighted(tr.hist, 1.0 - r, info.hist, r, 0.0, dst=tr.hist)
         if prev_state != TrackState.ACTIVE:
             gone = t - tr.state_since
             self._set_state(tr, TrackState.ACTIVE, t)
@@ -406,29 +408,18 @@ class PlayerTracker:
             if nose is None and tr.pose.point(L_EYE) is not None and tr.pose.point(R_EYE) is not None:
                 nose = (tr.pose.point(L_EYE) + tr.pose.point(R_EYE)) / 2
             anchors.append(nose)
-        best: dict[int, int] = {}
-        best_cost = INF
-        options = list(range(len(geoms))) + [None]
-        for combo in itertools.product(options, repeat=len(tracks)):
-            used = [c for c in combo if c is not None]
-            if len(used) != len(set(used)):
-                continue
-            total, mapping, ok = 0.0, {}, True
-            for ti, gi in enumerate(combo):
-                if gi is None:
-                    total += self.cfg.face.association_gate + 0.01
-                    continue
+        gate = self.cfg.face.association_gate
+        costs = []
+        for ti, tr in enumerate(tracks):
+            row = []
+            for geom in geoms:
                 if anchors[ti] is None:
-                    ok = False
-                    break
-                d = float(np.linalg.norm(geoms[gi].center - anchors[ti]) / max(tracks[ti].size, 0.03))
-                if d > self.cfg.face.association_gate:
-                    ok = False
-                    break
-                total += d
-                mapping[ti] = gi
-            if ok and total < best_cost:
-                best_cost, best = total, mapping
+                    row.append(INF)
+                    continue
+                d = float(np.linalg.norm(geom.center - anchors[ti]) / max(tr.size, 0.03))
+                row.append(d if d <= gate else INF)
+            costs.append(row)
+        best = _solve_assignment(costs, gate + 0.01)
         for ti, tr in enumerate(tracks):
             gi = best.get(ti)
             tr.face.update(geoms[gi] if gi is not None else None, t, self._pose_face(tr))

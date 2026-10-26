@@ -42,51 +42,39 @@ CHEEK_A, CHEEK_B = 234, 454
 
 @dataclass
 class FaceDetection:
-    landmarks: np.ndarray    # (N, 3) normalised image coords, mirrored to display space
+    landmarks: np.ndarray    # (N, 2) normalised image coords, mirrored to display space
 
 
 @dataclass
 class FaceGeometry:
     center: np.ndarray       # eye midpoint, isotropic normalised coords
     forehead: np.ndarray
-    chin: np.ndarray
-    eye_dist: float
     scale: float             # yaw-corrected face scale (≈ frontal eye distance)
     roll: float              # radians, image plane
     yaw: float               # radians, + = turned towards image right
-    pitch: float             # ratio, ~0 neutral, + = looking down
-    bbox: tuple[float, float, float, float]
 
 
 def compute_face_geometry(lms: np.ndarray, aspect: float) -> FaceGeometry:
-    """Geometry from 478 face-mesh landmarks (normalised image coords)."""
-    p = lms[:, :2].astype(np.float64).copy()
+    """Geometry from face-mesh landmarks (normalised image coords)."""
+    idx = (*EYE_A, *EYE_B, NOSE_TIP, FOREHEAD, CHEEK_A, CHEEK_B)
+    p = lms[list(idx), :2].astype(np.float64)
     p[:, 1] /= aspect                       # isotropic coordinates
-    ea = p[list(EYE_A)].mean(axis=0)
-    eb = p[list(EYE_B)].mean(axis=0)
+    ea, eb = p[0:2].mean(axis=0), p[2:4].mean(axis=0)
     left, right = (ea, eb) if ea[0] <= eb[0] else (eb, ea)
     center = (left + right) / 2
     eye_vec = right - left
-    eye_dist = float(max(np.linalg.norm(eye_vec), 1e-4))
     roll = math.atan2(eye_vec[1], eye_vec[0])
 
-    nose = p[NOSE_TIP]
-    ca, cb = p[CHEEK_A], p[CHEEK_B]
+    nose, fh, ca, cb = p[4], p[5], p[6], p[7]
     c_left, c_right = (ca, cb) if ca[0] <= cb[0] else (cb, ca)
     d_l = np.linalg.norm(nose - c_left)
     d_r = np.linalg.norm(nose - c_right)
     yaw_ratio = float(np.clip((d_l - d_r) / max(d_l + d_r, 1e-6), -0.95, 0.95))
     yaw = math.asin(yaw_ratio)
 
-    fh, ch = p[FOREHEAD], p[CHIN]
-    d_up = np.linalg.norm(nose - fh)
-    d_dn = np.linalg.norm(nose - ch)
-    pitch = float((d_up - d_dn) / max(d_up + d_dn, 1e-6))
-
+    eye_dist = float(max(np.linalg.norm(eye_vec), 1e-4))
     scale = eye_dist / max(math.cos(yaw), 0.55)
-    xs, ys = p[:, 0], p[:, 1]
-    return FaceGeometry(center, fh.copy(), ch.copy(), eye_dist, scale, roll, yaw, pitch,
-                        (float(xs.min()), float(ys.min()), float(xs.max()), float(ys.max())))
+    return FaceGeometry(center, fh.copy(), scale, roll, yaw)
 
 
 def geometry_from_pose_head(eye_l: np.ndarray, eye_r: np.ndarray, nose: np.ndarray,
@@ -107,10 +95,7 @@ def geometry_from_pose_head(eye_l: np.ndarray, eye_r: np.ndarray, nose: np.ndarr
     # Forehead ≈ 1.1 eye distances above the eye line, perpendicular to it.
     up = np.array([math.sin(roll), -math.cos(roll)])
     forehead = center + up * 1.1 * scale
-    chin = center - up * 1.9 * scale
-    half = 1.3 * scale
-    return FaceGeometry(center, forehead, chin, eye_dist, scale, roll, yaw, 0.0,
-                        (center[0] - half, forehead[1], center[0] + half, chin[1]))
+    return FaceGeometry(center, forehead, scale, roll, yaw)
 
 
 class FaceStatus(Enum):
@@ -149,7 +134,7 @@ class MediaPipeFaceBackend:
         result = self._landmarker.detect_for_video(image, ts_ms)
         faces = []
         for lms in result.face_landmarks:
-            arr = np.array([[lm.x, lm.y, lm.z] for lm in lms], dtype=np.float64)
+            arr = np.array([(lm.x, lm.y) for lm in lms], dtype=np.float64)
             arr[:, 0] = 1.0 - arr[:, 0]      # mirror to display space
             faces.append(FaceDetection(arr))
         return faces
@@ -165,56 +150,42 @@ class PlayerFace:
         self.cfg = cfg
         self.f_center = OneEuroFilter(cfg.filter_min_cutoff, cfg.filter_beta)
         self.f_forehead = OneEuroFilter(cfg.filter_min_cutoff, cfg.filter_beta)
-        self.f_chin = OneEuroFilter(cfg.filter_min_cutoff, cfg.filter_beta)
         self.f_scale = OneEuroFilter(cfg.filter_min_cutoff * 0.7, cfg.filter_beta * 2)
         self.f_roll = AngleFilter(cfg.angle_min_cutoff, cfg.angle_beta)
         self.f_yaw = AngleFilter(cfg.angle_min_cutoff, cfg.angle_beta)
         self.status = FaceStatus.LOST
         self.center: np.ndarray | None = None
         self.forehead: np.ndarray | None = None
-        self.chin: np.ndarray | None = None
         self.scale = 0.0
         self.roll = 0.0
         self.yaw = 0.0
-        self.pitch = 0.0
         self.alpha = 0.0             # effect opacity (fades while predicted)
         self.last_seen = -math.inf
         self._velocity = np.zeros(2)
         self.raw: FaceGeometry | None = None
-        # Metrics (per update): smoothed-vs-measured anchor error in face scales,
-        # and frame-to-frame displacement of the smoothed centre.
+        # Metric (per update): smoothed-vs-measured anchor error in face scales.
         self.alignment_error = math.nan
-        self.step_displacement = math.nan
-        self.detections = 0
-        self.updates = 0
 
     def _filter(self, g: FaceGeometry, t: float) -> None:
-        prev = None if self.center is None else self.center.copy()
         self.center = self.f_center(g.center, t)
         self.forehead = self.f_forehead(g.forehead, t)
-        self.chin = self.f_chin(g.chin, t)
-        self.scale = float(self.f_scale(np.array([g.scale]), t)[0])
-        self.roll = float(self.f_roll(np.array([g.roll]), t)[0])
-        self.yaw = float(self.f_yaw(np.array([g.yaw]), t)[0])
-        self.pitch = g.pitch
+        self.scale = self.f_scale.scalar(g.scale, t)
+        self.roll = self.f_roll.scalar(g.roll, t)
+        self.yaw = self.f_yaw.scalar(g.yaw, t)
         v = self.f_center.velocity
         self._velocity = v if v is not None else np.zeros(2)
-        self.step_displacement = (float(np.linalg.norm(self.center - prev) / max(self.scale, 1e-4))
-                                  if prev is not None else math.nan)
         self.alignment_error = float(np.linalg.norm(self.forehead - g.forehead) / max(g.scale, 1e-4))
 
     def _reset_filters(self) -> None:
-        for f in (self.f_center, self.f_forehead, self.f_chin, self.f_scale, self.f_roll, self.f_yaw):
+        for f in (self.f_center, self.f_forehead, self.f_scale, self.f_roll, self.f_yaw):
             f.reset()
 
     def update(self, geom: FaceGeometry | None, t: float,
                pose_geom: FaceGeometry | None = None) -> None:
-        self.updates += 1
         self.raw = geom
         if geom is not None:
             if self.status in (FaceStatus.LOST,):
                 self._reset_filters()
-            self.detections += 1
             self._filter(geom, t)
             self.status = FaceStatus.TRACKED
             self.last_seen = t
@@ -229,12 +200,9 @@ class PlayerFace:
             self.center = self.center + shift
             if self.forehead is not None:
                 self.forehead = self.forehead + shift
-            if self.chin is not None:
-                self.chin = self.chin + shift
             self._velocity *= 0.7
             self.status = FaceStatus.PREDICTED
             self.alpha = max(0.35, 1.0 - gap / self.cfg.hold_s)
-            self.step_displacement = math.nan
             return
         if pose_geom is not None:
             if self.status == FaceStatus.LOST:
@@ -247,7 +215,6 @@ class PlayerFace:
         self.status = FaceStatus.LOST
         self.alpha = 0.0
         self.center = None
-        self.step_displacement = math.nan
 
     @property
     def visible(self) -> bool:

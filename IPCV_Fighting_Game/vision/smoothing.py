@@ -51,6 +51,28 @@ class OneEuroFilter:
         self.x_prev, self.dx_prev, self.t_prev = x_hat, dx_hat, t
         return x_hat.copy()
 
+    def scalar(self, x: float, t: float) -> float:
+        """Filter one scalar without allocating 1-element arrays."""
+        if self.x_prev is None or self.t_prev is None:
+            self.x_prev = np.array([x], dtype=np.float64)
+            self.dx_prev = np.zeros_like(self.x_prev)
+            self.t_prev = t
+            return float(x)
+        prev = float(self.x_prev[0])
+        dt = t - self.t_prev
+        if dt <= 1e-6:
+            return prev
+        dx = (x - prev) / dt
+        a_d = _alpha(self.d_cutoff, dt)
+        dx_hat = a_d * dx + (1 - a_d) * float(self.dx_prev[0])
+        cutoff = self.min_cutoff + self.beta * abs(dx_hat)
+        a = _alpha(cutoff, dt)
+        x_hat = a * x + (1 - a) * prev
+        self.x_prev[0] = x_hat
+        self.dx_prev[0] = dx_hat
+        self.t_prev = t
+        return float(x_hat)
+
     @property
     def velocity(self) -> np.ndarray | None:
         return None if self.dx_prev is None else self.dx_prev.copy()
@@ -65,6 +87,12 @@ class AngleFilter(OneEuroFilter):
             # Unwrap the new measurement close to the previous estimate.
             x = self.x_prev + (x - self.x_prev + np.pi) % (2 * np.pi) - np.pi
         return super().__call__(x, t)
+
+    def scalar(self, x: float, t: float) -> float:
+        if self.x_prev is not None:
+            prev = float(self.x_prev[0])
+            x = prev + (x - prev + math.pi) % (2 * math.pi) - math.pi
+        return super().scalar(x, t)
 
 
 class LandmarkSmoother:
@@ -82,34 +110,56 @@ class LandmarkSmoother:
         self.n, self.dims = n, dims
         self.vis_threshold = vis_threshold
         self.hold_s = hold_s
-        self.params = (min_cutoff, beta, d_cutoff)
-        self.filters = [OneEuroFilter(*self.params) for _ in range(n)]
+        self.min_cutoff, self.beta, self.d_cutoff = min_cutoff, beta, d_cutoff
         self.value = np.full((n, dims), np.nan)
-        self.velocity = np.zeros((n, dims))
         self.last_seen = np.full(n, -np.inf)
         self.valid = np.zeros(n, dtype=bool)      # value usable (seen or held)
         self.observed = np.zeros(n, dtype=bool)   # actually seen this frame
         self.recoveries = 0                        # count of missing -> seen events
+        self._dx_prev = np.zeros((n, dims))
+        self._t_prev = np.full(n, np.nan)
 
     def update(self, points: np.ndarray, visibility: np.ndarray, t: float) -> None:
         seen = visibility >= self.vis_threshold
-        for i in range(self.n):
-            if seen[i]:
-                if not self.valid[i]:
-                    self.filters[i].reset()
-                    if np.isfinite(self.last_seen[i]):
-                        self.recoveries += 1
-                self.value[i] = self.filters[i](points[i], t)
-                v = self.filters[i].velocity
-                self.velocity[i] = v if v is not None else 0.0
-                self.last_seen[i] = t
-                self.valid[i] = True
-            else:
-                held = (t - self.last_seen[i]) <= self.hold_s
-                self.valid[i] = bool(held)
-                self.velocity[i] *= 0.5
-                if not held:
-                    self.value[i] = np.nan
+        reappeared = seen & ~self.valid
+        if np.any(reappeared & np.isfinite(self.last_seen)):
+            self.recoveries += int(np.count_nonzero(reappeared & np.isfinite(self.last_seen)))
+
+        continuing = seen & self.valid & np.isfinite(self._t_prev)
+        if np.any(continuing):
+            dt = t - self._t_prev[continuing]
+            active = dt > 1e-6
+            idx = np.flatnonzero(continuing)[active]
+            if idx.size:
+                dtv = dt[active][:, None]
+                x = points[idx]
+                x_prev = self.value[idx]
+                dx = (x - x_prev) / dtv
+                a_d = _alpha(self.d_cutoff, dtv)
+                dx_hat = a_d * dx + (1 - a_d) * self._dx_prev[idx]
+                cutoff = self.min_cutoff + self.beta * np.abs(dx_hat)
+                a = _alpha(cutoff, dtv)
+                self.value[idx] = a * x + (1 - a) * x_prev
+                self._dx_prev[idx] = dx_hat
+                self._t_prev[idx] = t
+
+        if np.any(reappeared):
+            self.value[reappeared] = points[reappeared]
+            self._dx_prev[reappeared] = 0.0
+            self._t_prev[reappeared] = t
+
+        self.last_seen[seen] = t
+        self.valid[seen] = True
+
+        missing = ~seen
+        if np.any(missing):
+            miss_idx = np.flatnonzero(missing)
+            held = (t - self.last_seen[miss_idx]) <= self.hold_s
+            held_idx = miss_idx[held]
+            invalid_idx = miss_idx[~held]
+            self.valid[held_idx] = True
+            self.valid[invalid_idx] = False
+            self.value[invalid_idx] = np.nan
         self.observed = seen.copy()
 
     def mark_all_missing(self, t: float) -> None:
