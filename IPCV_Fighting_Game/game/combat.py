@@ -28,13 +28,11 @@ class Projectile:
     radius: float = 30.0
     damage: float = 18.0
     alive: bool = True
-    age: float = 0.0
 
     def box(self) -> Box:
         return Box.from_center(self.x, self.y, self.radius * 2, self.radius * 1.6)
 
     def update(self, dt: float, left: float, right: float) -> None:
-        self.age += dt
         self.x += self.direction * self.speed * dt
         if self.x < left - 60 or self.x > right + 60:
             self.alive = False

@@ -148,16 +148,6 @@ def test_time_up_awards_round_to_healthier_player():
     assert over and over[0].data["winner"] == 1 and over[0].data["reason"] == "time"
 
 
-def test_restart_resets_everything():
-    gs = make_state(rounds_to_win=1)
-    gs.round_wins = [1, 0]
-    gs.match_winner = 0
-    gs.restart_match()
-    assert gs.round_wins == [0, 0] and gs.match_winner is None
-    assert gs.phase == Phase.ROUND_INTRO and gs.round_number == 1
-    assert all(f.health == gs.cfg.max_health for f in gs.fighters)
-
-
 def test_counter_hit_and_combo_scaling():
     gs = make_state()
     put_in_range(gs)

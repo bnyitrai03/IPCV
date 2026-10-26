@@ -91,13 +91,13 @@ def test_scenario_reentry_and_events():
     assert (1, "lost") in kinds
     assert any(k == "reentry" or k == "recovered" for p, k in kinds if p == 1)
     counts = Counter((e.player_id, e.gesture) for e in events)
-    for pid, expected in EXPECTED_EVENTS.items():
-        for gesture, n in expected.items():
+    expected = {(pid, gesture) for pid, gestures in EXPECTED_EVENTS.items()
+                for gesture in gestures}
+    allowed = expected | {(pid, "block_end") for pid in EXPECTED_EVENTS}
+    assert set(counts) <= allowed, set(counts) - allowed
+    for pid, gestures in EXPECTED_EVENTS.items():
+        for gesture, n in gestures.items():
             assert counts[(pid, gesture)] == n, (pid, gesture, counts)
-    # No spurious punches anywhere else in the scenario (incl. crossing, side-steps).
-    total_punches = sum(v for (p, g), v in counts.items() if g.startswith("punch"))
-    assert total_punches == sum(v for e in EXPECTED_EVENTS.values()
-                                for g, v in e.items() if g.startswith("punch"))
 
 
 def test_faces_follow_body_identity():

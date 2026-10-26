@@ -119,8 +119,6 @@ def target_pose(f: Fighter, clock: float) -> Pose:
         windup, strike = ATTACK_POSES[(spec.name, f.attack.side)]
         if t < spec.startup:
             # Startup: into the wind-up (hook: pull back, uppercut: crouch).
-            if windup is STANCE:
-                return lerp_pose(STANCE, strike, ease_out(t / spec.startup))
             return lerp_pose(STANCE, windup, ease_out(t / spec.startup))
         if t < spec.startup + spec.active:
             # Active: snap from the wind-up into the strike in the first half.

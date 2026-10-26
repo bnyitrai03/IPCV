@@ -132,7 +132,7 @@ class Arena:
         surf.blit(self.sun_glow, (sun[0] - 210, sun[1] - 210))
         pygame.draw.circle(surf, (255, 222, 170), sun, 62)
         # Clouds drift.
-        for (x, y, cw, speed), cloud in zip(self.clouds, self.cloud_surfs):
+        for (x, y, _cw, speed), cloud in zip(self.clouds, self.cloud_surfs):
             cx = (x + clock * speed) % (self.w + 300) - 150
             surf.blit(cloud, (cx, y))
         surf.blit(self.far, (sx * 0.2, sy * 0.2))

@@ -44,7 +44,6 @@ class GameState:
         self.round_number = 0
         self.match_winner: int | None = None     # 0/1, or -1 for draw
         self.round_winner: int | None = None
-        self.round_end_reason = ""
         self.new_round()
 
     # ------------------------------------------------------------------ flow
@@ -55,17 +54,10 @@ class GameState:
         self.time_left = float(self.cfg.round_time_s)
         self.projectiles.clear()
         self.round_winner = None
-        self.round_end_reason = ""
         self.slowmo = 0.0
         for f, x, facing in zip(self.fighters, self.start_x, (1, -1)):
             f.reset_for_round(x, facing)
         self._pending_events = [GameEvent("round_intro", {"round": self.round_number})]
-
-    def restart_match(self) -> None:
-        self.round_wins = [0, 0]
-        self.round_number = 0
-        self.match_winner = None
-        self.new_round()
 
     @property
     def time_scale(self) -> float:
@@ -155,7 +147,6 @@ class GameState:
             else:
                 winner = 0 if f0.health > f1.health else 1
         self.round_winner = winner
-        self.round_end_reason = reason
         if winner >= 0:
             self.round_wins[winner] += 1
             self.fighters[winner].set_victory()

@@ -29,7 +29,6 @@ SW_METRES = 0.38
 
 @dataclass
 class PersonSpec:
-    name: str
     color_bgr: tuple[int, int, int]
     base_x: float
 
@@ -74,7 +73,7 @@ class SyntheticScenario:
         self.aspect = width / height
         self.noise = noise
         self.rng = np.random.default_rng(seed)
-        self.people = [PersonSpec("A", (40, 40, 210), 0.30), PersonSpec("B", (200, 120, 30), 0.70)]
+        self.people = [PersonSpec((40, 40, 210), 0.30), PersonSpec((200, 120, 30), 0.70)]
         self.u = 0.13   # shoulder width, normalised-x units
 
     # ------------------------------------------------------------- scenario

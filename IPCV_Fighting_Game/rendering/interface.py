@@ -208,8 +208,6 @@ class WebcamPanel:
         self.crop_c: np.ndarray | None = None
         self.crop_w = 0.5
         self.show_pose = True
-        self._last_surface: pygame.Surface | None = None
-        self._last_frame_id = -1
 
     def _crop_target(self, p: PlayerSnapshot, aspect: float) -> tuple[np.ndarray, float]:
         """Crop centre (normalised image coords) and width (normalised-x): head and

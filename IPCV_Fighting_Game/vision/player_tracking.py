@@ -89,7 +89,6 @@ class PlayerTrack:
         self.last_seen = -math.inf
         self.state_since = 0.0
         self.matched_this_frame = False
-        self.last_cost: dict[str, float] = {}
         self.bbox: tuple[float, float, float, float] | None = None   # normalised image coords
 
     @property
@@ -155,8 +154,6 @@ class PlayerTracker:
         self._registration_count = 0
         self.events: list[TrackerEvent] = []
         self.overlap = False
-        self.assignment_margin = math.nan
-        self.frame_count = 0
 
     # --------------------------------------------------------------- helpers
     def _emit(self, ts: float, player: int, kind: str, **details) -> None:
@@ -220,10 +217,9 @@ class PlayerTracker:
         return INF
 
     def _best_assignment(self, tracks: list[PlayerTrack], infos: list[DetectionInfo],
-                         t: float) -> tuple[dict[int, int], float, float]:
+                         t: float) -> dict[int, int]:
         """Optimal assignment track->detection (brute force; n is tiny).
 
-        Returns (mapping track_index->det_index, best_cost, margin_to_second_best).
         Unassigned tracks pay a miss cost equal to the gate.
         """
         miss = self.tcfg.w_position * self.tcfg.position_gate + 1.0
@@ -248,17 +244,15 @@ class PlayerTracker:
                     mapping[ti] = di
             if ok:
                 results.append((total, mapping))
-        results.sort(key=lambda r: r[0])
         if not results:
-            return {}, INF, math.nan
-        margin = results[1][0] - results[0][0] if len(results) > 1 else math.nan
-        return results[0][1], results[0][0], margin
+            return {}
+        results.sort(key=lambda r: r[0])
+        return results[0][1]
 
     # ------------------------------------------------------------------ update
     def update(self, detections: list[PoseDetection], faces: list[FaceDetection] | None,
                image_bgr: np.ndarray | None, capture_ts: float, now: float) -> list[GestureEvent]:
         """Process one vision frame. ``faces`` is None when the face model was skipped."""
-        self.frame_count += 1
         t = capture_ts
         infos = [i for i in (self._describe(d, image_bgr) for d in detections) if i is not None]
         for tr in self.tracks:
@@ -277,8 +271,7 @@ class PlayerTracker:
 
         # Associate registered tracks.
         candidates = [tr for tr in self.tracks if tr.registered]
-        mapping, _cost, margin = self._best_assignment(candidates, infos, t) if candidates else ({}, 0, math.nan)
-        self.assignment_margin = margin
+        mapping = self._best_assignment(candidates, infos, t) if candidates else {}
         used = set()
         for ti, di in mapping.items():
             tr, info = candidates[ti], infos[di]
@@ -350,7 +343,6 @@ class PlayerTracker:
         tr.bbox = info.det.bbox()
         tr.last_seen = t
         tr.matched_this_frame = True
-        tr.last_cost = {"appearance": hist_distance(tr.hist, info.hist)}
         # Appearance update only when unambiguous.
         if info.hist is not None and not self.overlap and info.n_key_visible >= 4:
             if tr.hist is None:

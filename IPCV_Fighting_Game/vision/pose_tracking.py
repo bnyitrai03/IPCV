@@ -64,10 +64,6 @@ class PoseDetection:
     image: np.ndarray            # (33, 4): x, y (normalised), z, visibility
     world: np.ndarray | None     # (33, 3) metres, or None
 
-    @property
-    def visibility(self) -> np.ndarray:
-        return self.image[:, 3]
-
     def center(self, vis_thr: float = 0.3) -> np.ndarray | None:
         """Torso centre (mean of visible shoulders/hips) in normalised coords."""
         idx = [L_SHOULDER, R_SHOULDER, L_HIP, R_HIP]
@@ -173,12 +169,10 @@ class PlayerPose:
         self.has_world = False
         self._sw_hist: deque[float] = deque(maxlen=15)
         self.shoulder_width = 0.15
-        self.last_update_ts = 0.0
         self.raw_visibility = np.zeros(NUM_LANDMARKS)
         self.raw_points = np.full((NUM_LANDMARKS, 2), np.nan)
 
     def update(self, det: PoseDetection | None, t: float) -> None:
-        self.last_update_ts = t
         if det is None:
             self.img.mark_all_missing(t)
             self.world.mark_all_missing(t)
@@ -204,17 +198,10 @@ class PlayerPose:
     def point(self, idx: int) -> np.ndarray | None:
         return self.img.value[idx].copy() if self.img.valid[idx] else None
 
-    def velocity(self, idx: int) -> np.ndarray:
-        return self.img.velocity[idx].copy()
-
     def world_point(self, idx: int) -> np.ndarray | None:
         if not self.has_world or not self.world.valid[idx]:
             return None
         return self.world.value[idx].copy()
-
-    def to_image(self, p: np.ndarray) -> tuple[float, float]:
-        """Isotropic coords -> normalised image coords (x, y in [0, 1])."""
-        return float(p[0]), float(p[1] * self.aspect)
 
     def confidence(self) -> float:
         """Mean raw visibility of the key joints (0..1)."""
@@ -222,13 +209,3 @@ class PlayerPose:
 
     def missing_key_joints(self) -> list[str]:
         return [name for name, i in KEY_JOINTS.items() if not self.img.valid[i]]
-
-    def hip_center(self) -> np.ndarray | None:
-        l, r = self.point(L_HIP), self.point(R_HIP)
-        if l is not None and r is not None:
-            return (l + r) / 2
-        ls, rs = self.point(L_SHOULDER), self.point(R_SHOULDER)
-        if ls is not None and rs is not None:
-            # Hips out of frame (players close to the camera): fall back to shoulders.
-            return (ls + rs) / 2
-        return None

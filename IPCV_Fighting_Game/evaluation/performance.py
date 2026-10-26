@@ -14,7 +14,6 @@ Definitions (all measured, nothing assumed):
 from __future__ import annotations
 
 import time
-from collections import deque
 
 import numpy as np
 
@@ -31,10 +30,6 @@ class PerformanceMonitor:
 
     def __init__(self, window_s: float = 1.0) -> None:
         self.window_s = window_s
-        self.frame_times: deque[float] = deque(maxlen=600)
-        self.all_frame_times: list[float] = []
-        self.e2e: deque[float] = deque(maxlen=300)
-        self.all_e2e: list[float] = []
         self._win_frames: list[float] = []
         self._win_vision: list[dict] = []
         self._win_e2e: list[float] = []
@@ -44,13 +39,10 @@ class PerformanceMonitor:
         if self.proc:
             self.proc.cpu_percent(None)
         self.latest_row: dict = {}
-        self.rows: list[dict] = []
 
     def frame(self, dt: float) -> None:
         if dt <= 0:
             return
-        self.frame_times.append(dt)
-        self.all_frame_times.append(dt)
         self._win_frames.append(dt)
 
     def on_display(self, snapshot, flip_ts: float) -> None:
@@ -59,8 +51,6 @@ class PerformanceMonitor:
             return
         self._last_snapshot_id = snapshot.frame_id
         e2e = (flip_ts - snapshot.capture_ts) * 1000
-        self.e2e.append(e2e)
-        self.all_e2e.append(e2e)
         self._win_e2e.append(e2e)
         self._win_vision.append(snapshot.timings_ms)
 
@@ -94,7 +84,6 @@ class PerformanceMonitor:
         self._win_frames, self._win_vision, self._win_e2e = [], [], []
         self._win_start = now
         self.latest_row = row
-        self.rows.append(row)
         return row
 
     def overlay_lines(self) -> list[str]:
@@ -111,14 +100,3 @@ class PerformanceMonitor:
             f"capture->result {f('capture_to_result_ms')} ms   end-to-end {f('e2e_ms')} ms",
             f"CPU {f('cpu_percent')} %   RAM {f('rss_mb', '{:.0f}')} MB",
         ]
-
-    def summary(self) -> dict:
-        ft = np.array(self.all_frame_times) if self.all_frame_times else np.array([np.nan])
-        e2e = np.array(self.all_e2e) if self.all_e2e else np.array([np.nan])
-        return {
-            "frames": len(self.all_frame_times),
-            "avg_fps": float(len(ft) / np.nansum(ft)) if self.all_frame_times else float("nan"),
-            "low1_fps": float(1.0 / np.nanpercentile(ft, 99)) if self.all_frame_times else float("nan"),
-            "e2e_ms_mean": float(np.nanmean(e2e)),
-            "e2e_ms_p95": float(np.nanpercentile(e2e, 95)) if self.all_e2e else float("nan"),
-        }

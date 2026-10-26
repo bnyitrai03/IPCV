@@ -178,8 +178,9 @@ IPCV_Fighting_Game/
   rendering/  arena, characters, animations, effects, face_effects, interface, sound
   evaluation/ session, performance, tracking_metrics, gesture_metrics
   scripts/    download_models, verify_multipose, analyze_session
-  tests/      test_fight_session.py, test_game_logic.py, test_vision_pipeline.py
-  assets/     models/ (downloaded), characters/ backgrounds/ sounds/ (empty: all procedural)
+  tests/      test_fight_session.py, test_game_logic.py, test_vision_pipeline.py,
+              test_strikes.py, test_evaluation.py
+  assets/     models/ (downloaded; all graphics and sounds are procedural)
 ```
 
 All graphics and sounds are generated procedurally in code — no third-party
@@ -288,7 +289,7 @@ when they return.
 What has been run (on a Linux machine **without a webcam**, where the
 MediaPipe model download was blocked by the network):
 
-* `pytest`: 43 tests — game logic (hits, blocking, buffering, trades,
+* `pytest`: full suite — game logic (hits, blocking, buffering, trades,
   specials, projectiles/clashes, KO, time-out, restart, counter hits), vision
   logic (One Euro filter, missing-landmark hold/recovery, hooks need a bent
   elbow, attacks fire once while the pose is held, slow reach does not fire,

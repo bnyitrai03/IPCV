@@ -54,7 +54,6 @@ from config import GestureConfig
 from vision.pose_tracking import (L_ELBOW, L_SHOULDER, L_WRIST, NOSE, R_ELBOW, R_SHOULDER,
                                   R_WRIST, PlayerPose)
 
-STRIKE_KINDS = ("hook", "uppercut")
 ARM_JOINTS = {"left": (L_SHOULDER, L_ELBOW, L_WRIST), "right": (R_SHOULDER, R_ELBOW, R_WRIST)}
 
 
@@ -77,7 +76,6 @@ class GestureEvent:
 class ArmSample:
     t: float
     pos: np.ndarray           # wrist, isotropic image coords / sw
-    depth: float              # towards-camera depth of wrist rel. shoulder, sw (nan if unknown)
     reach: float              # max(2D, 3D) wrist-shoulder distance / sw
     elbow_deg: float          # elbow angle (180 = straight arm), nan if elbow not visible
 
@@ -91,7 +89,6 @@ class ArmTracker:
     prev: ArmSample | None = None
     pending_uppercut: tuple | None = None      # (since, onset, sample, values)
     trail: deque = field(default_factory=lambda: deque(maxlen=30))   # recent ArmSamples
-    last_kind: str = ""
 
 
 def _angle_deg(a: np.ndarray, b: np.ndarray) -> float:
@@ -152,11 +149,9 @@ class GestureRecognizer:
         if s is None or w is None:
             return None
         reach = float(np.linalg.norm(w - s) / sw)
-        depth = math.nan
         elbow = math.nan
         ws, we, ww = pose.world_point(s_idx), pose.world_point(e_idx), pose.world_point(w_idx)
         if sw_world is not None and ws is not None and ww is not None:
-            depth = float(-(ww[2] - ws[2]) / sw_world)          # + = towards the camera
             reach = max(reach, float(np.linalg.norm(ww - ws) / sw_world))
         if ws is not None and we is not None and ww is not None:
             # 3D angle: a bent arm with the forearm pointing at the camera looks
@@ -164,7 +159,7 @@ class GestureRecognizer:
             elbow = _angle_deg(ws - we, ww - we)
         elif e is not None:
             elbow = _angle_deg(s - e, w - e)
-        return ArmSample(t, w / sw, depth, reach, elbow)
+        return ArmSample(t, w / sw, reach, elbow)
 
     # ------------------------------------------------------------------ update
     def update(self, pose: PlayerPose, capture_ts: float, now: float) -> list[GestureEvent]:
@@ -411,7 +406,6 @@ class GestureRecognizer:
         arm.state = ArmState.RECOVER
         arm.last_fire = now
         arm.onset = onset          # re-arm reference: where the attack started
-        arm.last_kind = kind
         arm.trail.clear()
         arm.pending_uppercut = None
         return GestureEvent(self.player_id, f"{kind}_{arm.side}", cur.t, onset.t, now,

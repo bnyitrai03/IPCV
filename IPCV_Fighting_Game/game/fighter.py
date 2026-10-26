@@ -13,8 +13,7 @@ States::
 """
 from __future__ import annotations
 
-import itertools
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from enum import Enum, auto
 
 from config import GameConfig
@@ -65,14 +64,11 @@ BODY_HALF_WIDTH = 38.0
 BODY_HEIGHT = 220.0
 PUSH_GAP = 84.0
 
-_attack_ids = itertools.count(1)
-
 
 @dataclass
 class ActiveAttack:
     spec: AttackSpec
     side: str             # "left" / "right" (which hand)
-    attack_id: int = field(default_factory=lambda: next(_attack_ids))
     has_hit: bool = False
     source_ts: float | None = None
 
@@ -83,7 +79,6 @@ class Fighter:
         self.player_id = player_id
         self.name = name
         self.cfg = cfg
-        self.spawn_x = x
         self.ground_y = 0.0     # set by GameState (arena floor)
         self.reset_for_round(x, facing)
 
@@ -104,7 +99,6 @@ class Fighter:
         self.walk_dir = 0.0
         self.combo_count = 0
         self.combo_timer = 0.0
-        self.last_hit_time = 0.0
         self.total_time = 0.0
 
     # --------------------------------------------------------------- queries

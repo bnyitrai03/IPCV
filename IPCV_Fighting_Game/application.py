@@ -77,7 +77,6 @@ class App:
         self.pause_index = 0
         self.clock_t = 0.0
         self.hit_flash = [0.0, 0.0]
-        self.log_session = log_session
         self.eval_session: Session | None = None
         self.tracking_logger: TrackingLogger | None = None
         self.gesture_logger: GestureLogger | None = None

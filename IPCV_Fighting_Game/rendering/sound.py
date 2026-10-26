@@ -68,8 +68,6 @@ class SoundBank:
         t5 = np.arange(n5) / RATE
         bell = sum(np.sin(2 * np.pi * f * t5) / (k + 1) for k, f in enumerate((660, 1320, 1990)))
         self.sounds["bell"] = _to_sound(bell * _env(n5, decay=3.0), 0.35)
-        self.sounds["select"] = _to_sound(np.sin(2 * np.pi * 1200 * t[: n // 2]) *
-                                          _env(n // 2, decay=30), 0.3)
 
     def play(self, name: str) -> None:
         if self.enabled and name in self.sounds:

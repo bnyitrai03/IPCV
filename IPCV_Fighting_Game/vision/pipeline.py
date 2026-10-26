@@ -106,7 +106,6 @@ class VisionPipeline:
         self.vision_fps = 0.0
         self._fps_times: deque[float] = deque(maxlen=60)
         self._commands: deque[str] = deque()
-        self.frames_processed = 0
 
     # ----------------------------------------------------------------- setup
     def start(self) -> None:
@@ -228,7 +227,6 @@ class VisionPipeline:
                 snap = self._make_snapshot(last_id, capture_ts, processed, display, poses,
                                            faces, timings,
                                            self.tracker.events[n_events_before:])
-                self.frames_processed += 1
                 with self._lock:
                     self._snapshot = snap
                     self._events.extend(events)

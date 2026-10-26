@@ -141,10 +141,14 @@ def test_pause_resume_restart_and_match_over_phase():
     assert session.phase == FightPhase.PAUSED
     session.resume()
     assert session.phase == FightPhase.FIGHT
+    session.state.round_wins = [1, 1]
+    session.state.round_number = 5
     session.pause()
     session.restart()
     assert session.phase == FightPhase.FIGHT
     assert session.state.fighters[0].health == session.cfg.game.max_health
+    assert session.state.round_wins == [0, 0]
+    assert session.state.round_number == 1
 
     session.state.phase = Phase.MATCH_OVER
     session.step(1 / 60)
