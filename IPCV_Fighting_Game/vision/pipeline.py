@@ -103,7 +103,6 @@ class VisionPipeline:
         self.synthetic = None
         self.tracker: PlayerTracker | None = None
         self.frame_listeners: list[Callable[[VisionSnapshot], None]] = []
-        self.gesture_listeners: list[Callable[[GestureEvent], None]] = []
         self.vision_fps = 0.0
         self._fps_times: deque[float] = deque(maxlen=60)
         self._commands: deque[str] = deque()
@@ -235,9 +234,6 @@ class VisionPipeline:
                     self._events.extend(events)
                 for fn in self.frame_listeners:
                     fn(snap)
-                for ev in events:
-                    for fn in self.gesture_listeners:
-                        fn(ev)
                 # Keep the tracker's event list bounded during long sessions.
                 if len(self.tracker.events) > 500:
                     del self.tracker.events[:250]

@@ -139,21 +139,6 @@ def test_face_effects_never_switch_players_during_crossing():
     assert checked > 1000 and wrong == 0, (wrong, checked)
 
 
-def test_gesture_trial_runner_scores_prompts():
-    import time as _t
-    from evaluation.gesture_metrics import GestureTrialRunner
-    from vision.gesture_recognition import GestureEvent
-    runner = GestureTrialRunner(None, players=(0,), repeats=1, seed=0)
-    now = _t.perf_counter() + 3.1
-    runner.update(now)
-    tr = runner.trial
-    assert tr is not None
-    if tr.gesture != "idle":
-        runner.on_gesture(GestureEvent(0, tr.gesture, now + 0.5, now + 0.4, now + 0.55))
-    runner.update(now + tr.duration + 0.01)
-    assert runner.results and runner.results[0]["correct"] == 1
-
-
 def test_single_player_registers_alone_and_second_joins_later():
     """One person alone must become P1; a second person arriving later becomes P2."""
     cfg = Config()

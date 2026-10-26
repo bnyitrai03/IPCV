@@ -6,7 +6,6 @@
         tracker_events.csv  identity events (registered, lost, recovered, absent, reentry, overlap)
         gestures.csv        every recognised gesture + when the game applied it
         annotations.csv     operator ground-truth key presses (see README, "Evaluation")
-        gesture_trials.csv  prompted trials from the gesture test mode
         meta.json           config + platform info
 
 Writes are thread-safe (the vision thread and the game loop both log).

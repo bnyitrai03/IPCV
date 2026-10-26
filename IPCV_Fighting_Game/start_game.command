@@ -29,5 +29,5 @@ done
 
 .venv/bin/python scripts/check_setup.py "${CAM_ARGS[@]}" || { echo; echo "Fix the [FAIL] line above, then run this again."; read -r -p "Press Enter to close..."; exit 1; }
 
-echo ">> Starting the game in WEBCAM mode (Esc = pause/menu)..."
-.venv/bin/python main.py --start webcam "$@"
+echo ">> Starting the game in WEBCAM mode (Esc = pause/quit)..."
+.venv/bin/python main.py "$@"

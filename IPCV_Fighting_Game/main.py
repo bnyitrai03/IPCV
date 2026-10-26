@@ -2,10 +2,9 @@
 
 Usage examples::
 
-    python main.py                         # start at the menu
+    python main.py                         # start in player registration
     python main.py --camera 1 --log        # second camera, write CSV logs
     python main.py --vision synthetic      # no webcam: scripted synthetic players
-    python main.py --start keyboard        # skip the menu
 """
 from __future__ import annotations
 
@@ -29,8 +28,6 @@ def parse_args(argv=None) -> argparse.Namespace:
     ap.add_argument("--debug", action="store_true", help="start with the debug overlay on")
     ap.add_argument("--fullscreen", action="store_true")
     ap.add_argument("--mute", action="store_true")
-    ap.add_argument("--start", choices=("webcam", "webcam_cpu", "keyboard", "cpu", "gesture_test"),
-                    help="skip the menu and start this mode")
     ap.add_argument("--frames", type=int, help="exit after N frames (automated smoke tests)")
     ap.add_argument("--screenshot", help="save a screenshot when exiting via --frames")
     ap.add_argument("-v", "--verbose", action="store_true")
@@ -56,7 +53,7 @@ def main(argv=None) -> int:
     from application import App   # imported after env setup
 
     app = App(cfg, vision_source=args.vision, log_session=args.log, debug=args.debug,
-              max_frames=args.frames, auto_start=args.start, screenshot=args.screenshot)
+              max_frames=args.frames, screenshot=args.screenshot)
     app.run()
     return 0
 

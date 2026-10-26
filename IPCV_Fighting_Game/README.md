@@ -7,9 +7,7 @@ Design). All five compulsory tasks run together in one application.
 
 ![Fight screen](docs/fight.png)
 
-| Menu | Player registration |
-|---|---|
-| ![Menu](docs/menu.png) | ![Registration](docs/calibration.png) |
+![Player registration](docs/calibration.png)
 
 > The screenshots were produced with the built-in **synthetic test scenario**
 > (`--vision synthetic`), not a real webcam — see [Testing status](#testing-status).
@@ -95,16 +93,18 @@ inference time per model. Run this before your first two-player session.
 ## 2. Running and playing
 
 ```bash
-python main.py                     # menu
+python main.py                     # start in player registration
 python main.py --log               # + write evaluation CSV logs to logs/
 python main.py --camera 1 --width 1280 --height 720
-python main.py --start keyboard    # skip the menu
 python main.py --vision synthetic  # no webcam: scripted synthetic players (demo/test)
 python main.py --fullscreen --mute --debug
 ```
 
-Menu modes: **Webcam fight** (2 players), **Solo - webcam vs CPU**, **Keyboard fight**, **Practice - keyboard vs CPU**,
-**Gesture test** (evaluation protocol), **Quit**.
+The game starts directly in player registration. When both players are
+tracked for 2.5 seconds the match begins; there is no menu. Press **Enter**
+during registration to start immediately with one player — the second player
+can step in later and is registered automatically during the match. Escape
+quits from registration and pauses during a fight.
 
 ### Setting up the play area
 
@@ -125,21 +125,13 @@ Menu modes: **Webcam fight** (2 players), **Solo - webcam vs CPU**, **Keyboard f
 | Special (energy ball) | **both arms raised above the head**, hold ~0.35 s | needs half an energy bar; lower arms to re-arm |
 | Move | **step left / right** from your registered position | dead zone ignores swaying |
 
-The keyboard always works in parallel (useful for testing or a missing player):
+Input is ignored during the 2-second "ROUND / FIGHT!" intro.
 
-| | Move | Block | Left hook | Right hook | Special |
-|---|---|---|---|---|---|
-| P1 | A / D | S | F | G | R |
-| P2 | ← / → | ↓ | K | L | I |
-
-Uppercuts: P1 T / Y, P2 O / P.
-
-Keys are matched by **physical position**, so they work with any keyboard layout (Greek, AZERTY, …): "A" means the key where A is on a US keyboard. Input is ignored during the 2-second "ROUND / FIGHT!" intro. On a Mac laptop, F1/F2/F5–F8 may need the **fn** key.
-
-Other keys: **Esc** pause/back, **Enter** confirm/rematch, **F1** debug
-overlay (FPS, latency, tracking signals, full camera view with both
-skeletons), **F2** toggle skeletons in the webcam panels, **C** recalibrate
-neutral positions, **R** (registration screen) re-register players.
+Operator keys: **Esc** pause/quit, **Enter** start/rematch, **F1** debug overlay
+(FPS, latency, tracking signals, full camera view with both skeletons),
+**F2** toggle skeletons in the webcam panels, **C** recalibrate neutral
+positions, **R** (registration screen) re-register players.
+On a Mac laptop, F1/F2/F5–F8 may need the **fn** key.
 Evaluation annotation keys: see section 6.
 
 ---
@@ -157,14 +149,16 @@ Evaluation annotation keys: see section 6.
                                          snapshot   │                      │ gesture events
                                        (immutable)  ▼                      ▼ (thread-safe queue)
             ┌─────────────────────────────────────────────────────────────────────────┐
-            │ main thread (application.py): 60 Hz render loop, fixed-step game logic, │
-            │ keyboard + CPU + webcam input merge, effects, HUD, webcam panels + AR   │
+            │ main thread: application.py (loop, rendering) + fight_session.py        │
+            │ calibration gate → webcam input adapter → GameState → effects/HUD       │
             └─────────────────────────────────────────────────────────────────────────┘
 ```
 
 * Inference never blocks rendering: the game reads the latest snapshot.
 * Game logic (`game/`) is pure Python with no pygame/OpenCV dependency, so it
-  is fully unit-tested and identical for keyboard and webcam input.
+  is fully unit-tested and independent of the webcam adapter.
+* `fight_session.py` is the only module that turns `VisionSnapshot` and
+  `GestureEvent` data into `PlayerInput` values.
 
 | Task | Main implementation |
 |---|---|
@@ -172,19 +166,19 @@ Evaluation annotation keys: see section 6.
 | 2 Body pose & motion | `vision/pose_tracking.py` (multi-person backend, per-player state), `vision/smoothing.py` (One Euro filter, missing landmarks) |
 | 3 Multiplayer identity | `vision/player_tracking.py` |
 | 4 Interaction & control | `vision/gesture_recognition.py`, `game/controls.py`, `game/fighter.py`, `game/combat.py`, `game/collision.py` |
-| 5 Integration & scene | `vision/pipeline.py`, `application.py`, `rendering/*`, `evaluation/performance.py` |
+| 5 Integration & scene | `vision/pipeline.py`, `application.py`, `fight_session.py`, `rendering/*`, `evaluation/performance.py` |
 | Evaluation | `evaluation/*.py`, `scripts/analyze_session.py`, `scripts/verify_multipose.py` |
 
 ```
 IPCV_Fighting_Game/
-  main.py  application.py  config.py  requirements.txt  config.example.json
+  main.py  application.py  fight_session.py  config.py  requirements.txt  config.example.json
   vision/     camera, pose_tracking, face_tracking, player_tracking,
               gesture_recognition, smoothing, pipeline, synthetic
-  game/       fighter, combat, collision, controls, game_state, ai
+  game/       fighter, combat, collision, controls, game_state
   rendering/  arena, characters, animations, effects, face_effects, interface, sound
   evaluation/ session, performance, tracking_metrics, gesture_metrics
   scripts/    download_models, verify_multipose, analyze_session
-  tests/      test_game_logic.py, test_vision_pipeline.py
+  tests/      test_fight_session.py, test_game_logic.py, test_vision_pipeline.py
   assets/     models/ (downloaded), characters/ backgrounds/ sounds/ (empty: all procedural)
 ```
 
@@ -283,8 +277,9 @@ All thresholds are in shoulder widths (sw) and configurable (`config.py`).
 Threaded capture → inference → snapshot; fixed-step 60 Hz logic; hit-stop,
 screen shake, particles (capped), animated arena that reacts to big hits,
 round intro/KO/time/victory transitions, live FPS/latency overlay (F1) and
-graceful degradation: missing models or camera → readable error and keyboard
-play; lost player → "TRACKING LOST" in their panel, keyboard still works.
+graceful degradation: missing models or camera → readable error screen;
+lost player → "TRACKING LOST" in their panel, with identity re-acquisition
+when they return.
 
 ---
 
@@ -293,14 +288,15 @@ play; lost player → "TRACKING LOST" in their panel, keyboard still works.
 What has been run (on a Linux machine **without a webcam**, where the
 MediaPipe model download was blocked by the network):
 
-* `pytest`: 41 tests — game logic (hits, blocking, buffering, trades,
-  specials, projectiles/clashes, KO, time-out, restart, counter hits) and
-  vision logic (One Euro filter, missing-landmark hold/recovery, hooks need a
-  bent elbow, attacks fire once while the pose is held, slow reach does not fire, identity kept
-  through a full crossing, occlusion recovery and re-entry, faces never
-  switch players, expected gesture counts, trial scoring) and keyboard input with a non-US layout.
-* Headless runs of every scene (menu, keyboard, CPU, webcam with the synthetic
-  scenario, gesture test) and a 3-minute synthetic stability run with logging.
+* `pytest`: 43 tests — game logic (hits, blocking, buffering, trades,
+  specials, projectiles/clashes, KO, time-out, restart, counter hits), vision
+  logic (One Euro filter, missing-landmark hold/recovery, hooks need a bent
+  elbow, attacks fire once while the pose is held, slow reach does not fire,
+  identity kept through a full crossing, occlusion recovery and re-entry,
+  faces never switch players, expected gesture counts) and the webcam-only
+  fight session (calibration gate, input adapter, pause/restart).
+* Headless runs of the webcam fight with the synthetic scenario and a
+  3-minute synthetic stability run with logging.
 * MediaPipe Tasks API calls were checked against installed mediapipe 0.10.32
   and 1.1.1 (classes, options, result fields).
 
@@ -312,7 +308,7 @@ are not results. Use the checklist below and the evaluation tools.
 
 ### Live test checklist (please do this first)
 1. `python scripts/verify_multipose.py` with two people → note the % of frames with 2 poses and inference times.
-2. `python main.py --debug --log` → Webcam fight. Registration should show P1/P2 labels.
+2. `python main.py --debug --log` → Webcam fight. Registration should show P1/P2 labels. Press **Enter** with only P1 visible: the fight should start, and P2 should register and start controlling when they step in.
 3. One player: hooks (elbow bent) and uppercuts with each arm; hold the pose afterwards (must hit **once**); a straight-arm swing and a straight punch must do nothing; guard the face (BLOCK light); raise both arms (special); step left/right.
 4. Two players: attack at the same time; walk past each other (crossing) and check the labels/effects in the panels stay with the right person; one player leaves the frame and returns.
 5. Turn your head, lean, move closer/further: AR effects should stay aligned.
@@ -325,7 +321,7 @@ are not results. Use the checklist below and the evaluation tools.
 
 Run with `--log`. Each run creates `logs/session_<timestamp>/` with
 `performance.csv`, `vision_frames.csv`, `tracker_events.csv`, `gestures.csv`,
-`annotations.csv`, `gesture_trials.csv` and `meta.json` (config + platform).
+`annotations.csv` and `meta.json` (config + platform).
 Then:
 
 ```bash
@@ -341,11 +337,6 @@ python scripts/analyze_session.py            # newest session → summary.md / s
 | F7 | a crossing finished with identities correct |
 | F8 | a crossing finished with identities wrong |
 
-**Gesture test mode** prompts "P1: RIGHT PUNCH", "P2: BLOCK", simultaneous
-attacks and idle periods (3 repetitions). The prompt is the label,
-giving precision, recall, missed actions, idle false positives per minute and
-simultaneous-action success without video annotation.
-
 | Metric | How it is obtained | Ground truth |
 |---|---|---|
 | Face detection rate | tracked frames / active frames | automatic |
@@ -359,11 +350,8 @@ simultaneous-action success without video annotation.
 | Crossing success rate | F7 / (F7 + F8) | **MANUAL** |
 | Occlusion recovery | LOST→ACTIVE gaps | automatic |
 | Re-entry recovery time | person visible again → identity restored | automatic |
-| Gesture precision / recall / missed | gesture test trials | prompted protocol |
-| False positive rate | detections in idle trials per minute | prompted protocol |
 | Recognition latency | motion onset → confirmed gesture | automatic |
 | Command latency | confirming frame capture → game tick applying it | automatic |
-| Simultaneous action success | both players detected in simultaneous trials | prompted protocol |
 | FPS, 1 % low FPS, end-to-end latency, CPU, RAM, long-run stability | `performance.csv` (first vs last third) | automatic |
 
 End-to-end latency is measured from the moment `read()` returns a camera frame

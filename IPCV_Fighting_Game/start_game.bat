@@ -12,6 +12,6 @@ if not exist ".venv\Scripts\python.exe" (
 set CAM=
 if "%1"=="--camera" set CAM=--camera %2
 ".venv\Scripts\python.exe" scripts\check_setup.py %CAM% || ( echo. & echo Fix the [FAIL] line above, then run this again. & pause & exit /b 1 )
-echo Starting the game in WEBCAM mode (Esc = pause/menu)...
-".venv\Scripts\python.exe" main.py --start webcam %*
+echo Starting the game in WEBCAM mode (Esc = pause/quit)...
+".venv\Scripts\python.exe" main.py %*
 pause
