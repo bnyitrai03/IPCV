@@ -185,11 +185,6 @@ class PlayerTracker:
             t.gestures.neutral_x = None
         self._registration_count = 0
 
-    def recalibrate(self) -> None:
-        for t in self.tracks:
-            if t.state == TrackState.ACTIVE:
-                t.gestures.calibrate(t.pose)
-
     @property
     def all_registered(self) -> bool:
         return all(t.registered for t in self.tracks)

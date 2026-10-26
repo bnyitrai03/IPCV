@@ -191,7 +191,7 @@ def test_enter_starts_a_solo_fight_from_registration():
         assert app.session.observe(active, [], 0.0)
         assert app.session.phase == FightPhase.FIGHT
         app._on_fight_start()
-        assert app.vision.requests == ["recalibrate"]
+        assert app.vision.requests == []
 
         app.session.reset_calibration()
         nobody = FakeSnapshot(

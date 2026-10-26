@@ -164,7 +164,7 @@ class VisionPipeline:
         return out
 
     def request(self, command: str) -> None:
-        """Thread-safe commands executed by the vision thread: 'recalibrate', 'reregister'."""
+        """Thread-safe commands executed by the vision thread: 'reregister'."""
         with self._lock:
             self._commands.append(command)
 
@@ -245,9 +245,7 @@ class VisionPipeline:
             cmds = list(self._commands)
             self._commands.clear()
         for c in cmds:
-            if c == "recalibrate" and self.tracker:
-                self.tracker.recalibrate()
-            elif c == "reregister" and self.tracker:
+            if c == "reregister" and self.tracker:
                 self.tracker.reset_registration()
 
     def _resize(self, img: np.ndarray) -> np.ndarray:

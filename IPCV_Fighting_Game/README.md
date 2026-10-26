@@ -129,8 +129,8 @@ Input is ignored during the 2-second "ROUND / FIGHT!" intro.
 
 Operator keys: **Esc** pause/quit, **Enter** start/rematch, **F1** debug overlay
 (FPS, latency, tracking signals, full camera view with both skeletons),
-**F2** toggle skeletons in the webcam panels, **C** recalibrate neutral
-positions, **R** (registration screen) re-register players.
+**F2** toggle skeletons in the webcam panels, **R** (registration screen)
+re-register players.
 On a Mac laptop, F1/F2/F5–F8 may need the **fn** key.
 Evaluation annotation keys: see section 6.
 

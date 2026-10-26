@@ -126,8 +126,6 @@ class App:
         self.hud.reset()
         self.effects.clear()
         self.hit_flash = [0.0, 0.0]
-        if self.vision:
-            self.vision.request("recalibrate")
 
     # --------------------------------------------------------------- loop
     def run(self) -> None:
@@ -240,9 +238,6 @@ class App:
             if key == pygame.K_ESCAPE:
                 self.session.pause()
                 self.pause_index = 0
-            elif key_is(event, "C") and self.vision:
-                self.vision.request("recalibrate")
-                self.banner.show("RECALIBRATED", 0.8, color=GOLD)
 
     def _annotate(self, key: int) -> None:
         if self.tracking_logger is None:
@@ -440,7 +435,7 @@ class App:
         for h in hints:
             text(self.screen, h, 24, (cx, y), (215, 205, 230), outline=0)
             y += 26
-        text(self.screen, "ESC pause   F1 debug   F2 skeleton   C recalibrate", 20,
+        text(self.screen, "ESC pause   F1 debug   F2 skeleton", 20,
              (cx, self.H - 20), (140, 130, 160), outline=0)
 
     def _render_pause(self) -> None:
