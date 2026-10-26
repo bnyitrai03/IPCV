@@ -429,9 +429,10 @@ class App:
         cx = self.W // 2
         y = top + 26
         hints = ["HOOK: elbow bent 90°, swing fist across your body",
-                 "UPPERCUT: one fist up & forward to head height",
-                 "BLOCK: both hands to face   SPECIAL: both arms up & hold",
-                 "MOVE: step left / right"]
+                 "UPPERCUT: one fist up and forward to head height",
+                 "BLOCK: both hands to face",
+                 "SPECIAL: both arms up & hold",
+                 "MOVE: step or lean left / right"]
         for h in hints:
             text(self.screen, h, 24, (cx, y), (215, 205, 230), outline=0)
             y += 26
