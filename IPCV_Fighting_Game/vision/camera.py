@@ -94,9 +94,11 @@ class CameraThread:
         self._thread.start()
 
     def _loop(self) -> None:
-        assert self._cap is not None
+        cap = self._cap
+        if cap is None:
+            return
         while self._running:
-            ok, img = self._cap.read()
+            ok, img = cap.read()
             ts = time.perf_counter()
             if not ok or img is None:
                 self.read_failures += 1
@@ -116,8 +118,17 @@ class CameraThread:
 
     def stop(self) -> None:
         self._running = False
-        if self._thread:
-            self._thread.join(timeout=1.0)
-        if self._cap:
-            self._cap.release()
-        self._cap = None
+        thread, self._thread = self._thread, None
+        joined = True
+        if thread is not None and thread is not threading.current_thread():
+            thread.join(timeout=2.0)
+            joined = not thread.is_alive()
+            if not joined:
+                log.warning("Camera thread did not stop within timeout; "
+                            "leaving the capture open for process exit")
+        if joined and self._cap is not None:
+            cap, self._cap = self._cap, None
+            try:
+                cap.release()
+            except Exception:   # noqa: BLE001 - best effort on shutdown
+                log.exception("Error while releasing the camera")

@@ -107,47 +107,66 @@ class VisionPipeline:
     # ----------------------------------------------------------------- setup
     def start(self) -> None:
         """Open camera + models. Raises VisionError with a readable message."""
-        if self.source == "synthetic":
-            from vision.synthetic import SyntheticScenario
-            self.synthetic = SyntheticScenario()
-            aspect = self.synthetic.aspect
-        else:
-            from vision.camera import CameraError, CameraThread
-            from vision.face_tracking import MediaPipeFaceBackend
-            from vision.pose_tracking import MediaPipePoseBackend
-            try:
-                self.pose_backend = MediaPipePoseBackend(
-                    self.cfg.pose, self.cfg.model_path(self.cfg.pose.model_file))
-                self.face_backend = MediaPipeFaceBackend(
-                    self.cfg.face, self.cfg.model_path(self.cfg.face.model_file))
-            except FileNotFoundError as exc:
-                raise VisionError(str(exc)) from exc
-            except Exception as exc:   # MediaPipe init errors (e.g. GPU/delegate issues)
-                raise VisionError(f"MediaPipe initialisation failed: {exc}") from exc
-            self.camera = CameraThread(self.cfg.camera)
-            try:
-                self.camera.start()
-            except CameraError as exc:
-                raise VisionError(str(exc)) from exc
-            w, h = self.camera.actual_size
-            aspect = w / h
-        self.tracker = PlayerTracker(self.cfg, aspect)
-        self._running = True
-        self._thread = threading.Thread(target=self._loop, name="vision", daemon=True)
-        self._thread.start()
+        try:
+            if self.source == "synthetic":
+                from vision.synthetic import SyntheticScenario
+                self.synthetic = SyntheticScenario()
+                aspect = self.synthetic.aspect
+            else:
+                from vision.camera import CameraError, CameraThread
+                from vision.face_tracking import MediaPipeFaceBackend
+                from vision.pose_tracking import MediaPipePoseBackend
+                try:
+                    self.pose_backend = MediaPipePoseBackend(
+                        self.cfg.pose, self.cfg.model_path(self.cfg.pose.model_file))
+                    self.face_backend = MediaPipeFaceBackend(
+                        self.cfg.face, self.cfg.model_path(self.cfg.face.model_file))
+                except FileNotFoundError as exc:
+                    raise VisionError(str(exc)) from exc
+                except Exception as exc:   # MediaPipe init errors (e.g. GPU/delegate issues)
+                    raise VisionError(f"MediaPipe initialisation failed: {exc}") from exc
+                self.camera = CameraThread(self.cfg.camera)
+                try:
+                    self.camera.start()
+                except CameraError as exc:
+                    raise VisionError(str(exc)) from exc
+                w, h = self.camera.actual_size
+                aspect = w / h
+            self.tracker = PlayerTracker(self.cfg, aspect)
+            self._running = True
+            self._thread = threading.Thread(target=self._loop, name="vision", daemon=True)
+            self._thread.start()
+        except Exception:
+            # Release anything acquired before the failure (camera, MediaPipe graphs).
+            self.stop()
+            raise
 
     def stop(self) -> None:
         self._running = False
-        if self._thread:
-            self._thread.join(timeout=2.0)
         if self.camera:
-            self.camera.stop()
-        for b in (self.pose_backend, self.face_backend):
-            if b is not None:
-                try:
-                    b.close()
-                except Exception:   # noqa: BLE001 - best effort on shutdown
-                    pass
+            try:
+                self.camera.stop()
+            except Exception:   # noqa: BLE001 - best effort on shutdown
+                log.exception("Error while stopping the camera thread")
+        thread, self._thread = self._thread, None
+        joined = True
+        if thread is not None and thread is not threading.current_thread():
+            thread.join(timeout=5.0)
+            joined = not thread.is_alive()
+            if not joined:
+                # Never close MediaPipe graphs under a running detect() call:
+                # that can deadlock in native code. The thread is a daemon, so
+                # leaving its resources to process exit is the safe option.
+                log.warning("Vision thread did not stop within timeout; "
+                            "skipping native backend close")
+        if joined:
+            for b in (self.pose_backend, self.face_backend):
+                if b is not None:
+                    try:
+                        b.close()
+                    except Exception:   # noqa: BLE001 - best effort on shutdown
+                        pass
+            self.pose_backend = self.face_backend = None
 
     # -------------------------------------------------------- public access
     def snapshot(self) -> VisionSnapshot | None:

@@ -81,6 +81,7 @@ class App:
         self.screenshot = screenshot
         self.frame_count = 0
         self.running = True
+        self._shutdown_done = False
         self._winner_banner_at: float | None = None
         self._winner_text = ""
         if log_session:
@@ -130,61 +131,75 @@ class App:
         step = 1.0 / self.cfg.game.logic_hz
         acc = 0.0
         last = time.perf_counter()
-        self._ensure_vision()
-        while self.running:
-            now = time.perf_counter()
-            dt = min(now - last, 0.1)
-            last = now
-            self.perf.frame(dt)
-            self.clock_t += dt
-            for event in pygame.event.get():
-                self._handle_event(event)
-            if self.vision and self.vision.error:
-                self.vision_error = self.vision.error
-            snap = self.vision.snapshot() if self.vision else None
-            events = self.vision.drain_events() if self.vision else []
-            if self.session.observe(snap, events, now):
-                self._on_fight_start()
-            if self.session.phase == FightPhase.FIGHT:
-                if self.effects.hitstop > 0:
-                    acc = 0.0
-                else:
-                    acc += dt
-                    while acc >= step:
-                        self._logic_step(step)
-                        acc -= step
-                        if self.session.phase != FightPhase.FIGHT:
-                            acc = 0.0
-                            break
-            self.effects.update(dt)
-            self.banner.update(dt)
-            self.hud.update(self.session.state, dt)
-            self.hit_flash = [max(0.0, h - dt * 2.5) for h in self.hit_flash]
-            self._render(dt, snap)
-            pygame.display.flip()
-            flip_ts = time.perf_counter()
-            self.perf.on_display(snap, flip_ts)
-            row = self.perf.tick(self.vision.vision_fps if self.vision else 0.0,
-                                 {"particles": len(self.effects.particles)})
-            if row and self.eval_session:
-                self._perf_writer.write({**row, "t": self.eval_session.rel(row["t"])})
-            self.frame_count += 1
-            if self.max_frames and self.frame_count >= self.max_frames:
-                if self.screenshot:
-                    pygame.image.save(self.screen, self.screenshot)
-                self.running = False
-            clock.tick(self.cfg.game.target_fps)
-        self.shutdown()
+        try:
+            self._ensure_vision()
+            while self.running:
+                now = time.perf_counter()
+                dt = min(now - last, 0.1)
+                last = now
+                self.perf.frame(dt)
+                self.clock_t += dt
+                for event in pygame.event.get():
+                    self._handle_event(event)
+                if self.vision and self.vision.error:
+                    self.vision_error = self.vision.error
+                snap = self.vision.snapshot() if self.vision else None
+                events = self.vision.drain_events() if self.vision else []
+                if self.session.observe(snap, events, now):
+                    self._on_fight_start()
+                if self.session.phase == FightPhase.FIGHT:
+                    if self.effects.hitstop > 0:
+                        acc = 0.0
+                    else:
+                        acc += dt
+                        while acc >= step:
+                            self._logic_step(step)
+                            acc -= step
+                            if self.session.phase != FightPhase.FIGHT:
+                                acc = 0.0
+                                break
+                self.effects.update(dt)
+                self.banner.update(dt)
+                self.hud.update(self.session.state, dt)
+                self.hit_flash = [max(0.0, h - dt * 2.5) for h in self.hit_flash]
+                self._render(dt, snap)
+                pygame.display.flip()
+                flip_ts = time.perf_counter()
+                self.perf.on_display(snap, flip_ts)
+                row = self.perf.tick(self.vision.vision_fps if self.vision else 0.0,
+                                     {"particles": len(self.effects.particles)})
+                if row and self.eval_session:
+                    self._perf_writer.write({**row, "t": self.eval_session.rel(row["t"])})
+                self.frame_count += 1
+                if self.max_frames and self.frame_count >= self.max_frames:
+                    if self.screenshot:
+                        pygame.image.save(self.screen, self.screenshot)
+                    self.running = False
+                clock.tick(self.cfg.game.target_fps)
+        except KeyboardInterrupt:
+            log.info("Interrupted, shutting down")
+        finally:
+            self.shutdown()
 
     def shutdown(self) -> None:
-        if self.vision:
-            self.vision.stop()
-        if self.eval_session:
-            self.eval_session.close()
-            log.info("Session logs: %s", self.eval_session.dir)
-            print(f"\nLogs written to: {self.eval_session.dir}\n"
-                  f"Analyse with:   python scripts/analyze_session.py \"{self.eval_session.dir}\"")
-        pygame.quit()
+        if self._shutdown_done:
+            return
+        self._shutdown_done = True
+        self.running = False
+        try:
+            if self.vision:
+                self.vision.stop()
+                self.vision = None
+        except Exception:   # noqa: BLE001 - shutdown must always finish
+            log.exception("Error while stopping the vision pipeline")
+        try:
+            if self.eval_session:
+                self.eval_session.close()
+                log.info("Session logs: %s", self.eval_session.dir)
+                print(f"\nLogs written to: {self.eval_session.dir}\n"
+                      f"Analyse with:   python scripts/analyze_session.py \"{self.eval_session.dir}\"")
+        finally:
+            pygame.quit()
 
     # -------------------------------------------------------------- input
     def _handle_event(self, event) -> None:
