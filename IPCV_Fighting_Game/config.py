@@ -5,7 +5,7 @@ overridden without editing code by placing a ``config.json`` next to this
 file (or passing ``--config path.json``), e.g.::
 
     {"camera": {"index": 1, "width": 1280, "height": 720},
-     "gestures": {"hook_min_dx": 0.5}}
+     "gestures": {"hook_min_dx": 0.4}}
 
 Paths are always resolved relative to the project root, never absolute.
 """
@@ -102,23 +102,37 @@ class GestureConfig:
     # All distances in shoulder widths (sw), speeds in sw per second.
     # --- shared attack motion ---
     strike_onset_speed: float = 1.5      # fist speed that starts a motion window
-    attack_min_speed: float = 2.5        # average fist speed over the attack
+    attack_min_speed: float = 2.2        # average fist speed over the attack
     attack_cooldown_s: float = 0.30      # per arm, after an attack
     rearm_dist: float = 0.6              # fist back this close to where the attack started...
     rearm_reach: float = 0.9             # ...or arm pulled in (wrist-shoulder < this)
     # --- hook: elbow bent ~90 deg, fast horizontal sweep towards/across the body ---
-    hook_min_dx: float = 0.6             # inward travel from the furthest-out wind-up point
-    hook_dominance: float = 1.0          # inward travel must exceed |dy| * this
+    hook_direction: str = "inward"       # "inward" = across the body; "both" also away from it
+    hook_min_dx: float = 0.4             # horizontal travel from the start of the sweep, sw
+    hook_dominance: float = 0.9          # horizontal travel must exceed |dy| * this
     hook_window_s: float = 0.6           # how far back to look for the wind-up point
+    hook_min_y: float = -0.7             # sw relative to the nose (- = above): the sweep
+    hook_max_y: float = 0.8              # must end around head height
+    hook_max_start_y: float = 1.3        # and may start from chest height
     hook_max_duration_s: float = 0.4     # wind-up point -> now must be this fast
-    hook_min_elbow_deg: float = 50.0     # elbow angle range (180 = straight arm)
-    hook_max_elbow_deg: float = 130.0
+    max_fist_speed: float = 25.0         # sw/s; faster single-frame jumps are tracking glitches
+    max_sample_gap_s: float = 0.1        # an attack must be tracked without longer gaps
+    raw_min_visibility: float = 0.3      # wrist/elbow confidence (fast fists are blurry)
+    frame_margin: float = 0.005          # wrist/elbow closer to the image border = not visible
+    arm_gap_tolerance_s: float = 0.2     # a blurred/lost wrist this long keeps the motion
+    hook_min_elbow_deg: float = 20.0     # elbow angle range (180 = straight arm); the
+    hook_max_elbow_deg: float = 145.0    # 3D OR the 2D image angle must be in range
+    elbow2d_min_segment: float = 0.4     # sw; shorter (foreshortened) arm segments -> no 2D angle
     # --- uppercut: one fist up and forward, ending at head height ---
-    uppercut_min_rise: float = 0.8
-    uppercut_end_below_nose: float = 0.15   # fist must end no lower than this below the nose
-    uppercut_min_reach: float = 0.95     # arm reaches out (a guard hand by the face does not)
+    uppercut_min_rise: float = 0.6
+    uppercut_end_below_nose: float = 0.45   # fist must end at least at chin height
+    uppercut_min_reach: float = 0.7      # fist away from the shoulder (bent arm is fine)
     uppercut_confirm_s: float = 0.12     # wait to make sure it is not a two-arm raise
-    uppercut_max_duration_s: float = 0.4 # start of the rise -> now must be this fast
+    uppercut_max_duration_s: float = 0.4 # lowest point -> now must be this fast
+    uppercut_min_peak_speed: float = 3.0 # peak fist speed during the rise (sw/s)
+    uppercut_max_inward_speed: float = 2.5   # sw/s; fist sweeping inward = hook, not uppercut
+    uppercut_max_side: float = 0.6       # sw; end fist at most this far beside its shoulder
+    uppercut_dominance: float = 1.3      # rise must exceed sideways travel * this
     # Block: wrists within this many shoulder widths of the nose.
     block_enter_dist: float = 0.85
     block_exit_dist: float = 1.05
@@ -127,10 +141,16 @@ class GestureConfig:
     special_raise: float = 0.45
     special_hold_s: float = 0.35
     special_cooldown_s: float = 2.5
-    # Movement: hip offset from calibrated neutral, in shoulder widths.
-    move_dead_zone: float = 0.30
-    move_full_scale: float = 1.10
-    move_smoothing: float = 0.25          # EMA factor per frame
+    # Movement. "lean": lean the upper body left/right (shoulders vs hips), so
+    # players can stand anywhere; "position": step away from the registered spot.
+    move_mode: str = "lean"
+    lean_dead_zone: float = 0.22          # shoulder tilt + head offset (sw) that is ignored
+    lean_release_ratio: float = 0.7       # keep walking until the lean drops below dead*this
+    lean_full_scale: float = 0.45         # sw for full walking speed
+    move_freeze_after_attack_s: float = 0.35   # torso twist of a punch is not a lean
+    move_dead_zone: float = 0.30          # (position mode) step size ignored, sw
+    move_full_scale: float = 1.10         # (position mode) step for full speed, sw
+    move_smoothing: float = 0.18          # EMA factor per frame
 
 
 @dataclass

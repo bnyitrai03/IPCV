@@ -3,15 +3,20 @@
   "pose": {"model_file": "pose_landmarker_full.task", "num_poses": 2},
   "face": {"num_faces": 2, "run_every_n_frames": 1},
   "gestures": {
-    "hook_min_dx": 0.6,
-    "hook_min_elbow_deg": 50,
-    "hook_max_elbow_deg": 130,
-    "uppercut_min_rise": 0.8,
-    "uppercut_min_reach": 0.95,
-    "attack_min_speed": 2.5,
+    "hook_direction": "inward",
+    "hook_min_dx": 0.4,
+    "hook_min_elbow_deg": 20,
+    "hook_max_elbow_deg": 145,
+    "uppercut_min_rise": 0.6,
+    "uppercut_end_below_nose": 0.45,
+    "uppercut_min_reach": 0.7,
+    "uppercut_min_peak_speed": 3.0,
+    "attack_min_speed": 2.2,
     "block_enter_dist": 0.85,
     "special_hold_s": 0.35,
-    "move_dead_zone": 0.30
+    "move_mode": "lean",
+    "lean_dead_zone": 0.22,
+    "lean_full_scale": 0.45
   },
   "game": {"round_time_s": 60, "rounds_to_win": 2, "fullscreen": false}
 }

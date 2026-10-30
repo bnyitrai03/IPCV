@@ -23,6 +23,39 @@ ATTACK_GESTURES = ("hook_left", "hook_right",
                    "uppercut_left", "uppercut_right", "block_start", "special")
 
 
+GESTURE_FEATURES = ("hook_in", "hook_speed", "elbow3d", "elbow2d",
+                    "up_rise", "up_h", "up_reach", "up_peak")
+
+
+class GestureFeatureLogger:
+    """Per camera frame: what the gesture recogniser measured for every player
+    and arm (``gesture_features.csv``). Used to tune thresholds from real play
+    and to explain missed / false attacks (F9 / F10 in annotations.csv).
+    Registered as a VisionPipeline frame listener (runs in the vision thread)."""
+
+    def __init__(self, session: Session) -> None:
+        self.session = session
+        cols = ["t", "frame_id"]
+        for p in (1, 2):
+            cols += [f"p{p}_{c}" for c in ("state", "lean", "move", "block")]
+            for side in ("left", "right"):
+                cols += [f"p{p}_{side}_state"] + [f"p{p}_{side}_{f}" for f in GESTURE_FEATURES]
+        self.w = session.writer("gesture_features", cols)
+
+    def on_frame(self, snap) -> None:
+        row = {"t": self.session.rel(snap.capture_ts), "frame_id": snap.frame_id}
+        for p in snap.players:
+            k = f"p{p.pid + 1}_"
+            sig = p.signals
+            row.update({k + "state": p.state.value, k + "lean": p.move_offset, k + "move": p.move,
+                        k + "block": int(p.block)})
+            for side in ("left", "right"):
+                row[f"{k}{side}_state"] = {0.0: "armed", 2.0: "recover"}.get(sig.get(f"state_{side}"), "")
+                for f in GESTURE_FEATURES:
+                    row[f"{k}{side}_{f}"] = sig.get(f"now_{side}_{f}", math.nan)
+        self.w.write(row)
+
+
 class GestureLogger:
     HEADER = ["t_capture", "player", "gesture", "onset_rel_ms", "recognition_latency_ms",
               "processing_ms", "command_latency_ms", "applied", "game_result"]
@@ -44,6 +77,10 @@ class GestureLogger:
 # ====================================================================== analysis
 def analyze_gestures(session_dir: Path) -> dict:
     out: dict = {}
+    ann = read_csv(session_dir / "annotations.csv")
+    if ann:
+        out["MANUAL_missed_attacks_marked_F9"] = sum(a["label"] == "missed_attack" for a in ann)
+        out["MANUAL_false_attacks_marked_F10"] = sum(a["label"] == "false_attack" for a in ann)
     g = read_csv(session_dir / "gestures.csv")
     if g:
         per = defaultdict(list)

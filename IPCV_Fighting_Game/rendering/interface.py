@@ -10,6 +10,7 @@ import pygame
 from game.fighter import Fighter, FighterState
 from game.game_state import GameState, Phase
 from rendering.characters import STYLES
+from rendering.body_effects import BodyEffects
 from rendering.face_effects import PlayerStatus, draw_face_effects
 from vision.face_tracking import FaceStatus
 from vision.pipeline import PlayerSnapshot, VisionSnapshot
@@ -236,6 +237,7 @@ class WebcamPanel:
         self.crop_c: np.ndarray | None = None
         self.crop_w = 0.5
         self.show_pose = True
+        self.body_fx = BodyEffects(STYLES[pid].accent)      # Task 4: gesture effects
         self._status_bar = pygame.Surface((rect.width, 24), pygame.SRCALPHA)
         self._status_bar.fill((10, 8, 16, 190))
 
@@ -251,6 +253,12 @@ class WebcamPanel:
             cx = 0.5 * cx + 0.5 * head[0]
             panel_h_norm = width * aspect / (self.rect.width / self.rect.height)
             cy = head[1] + 0.12 * panel_h_norm
+            # Hands raised above the head (special): move the view up so the
+            # charge effect between the hands stays in the picture.
+            wrists_y = [p.landmarks[i][1] for i in (15, 16) if not np.isnan(p.landmarks[i]).any()]
+            if wrists_y and min(wrists_y) < head[1]:
+                top = min(wrists_y) - 0.08 * panel_h_norm
+                cy = min(cy, top + 0.5 * panel_h_norm)
         return np.array([cx, cy]), width
 
     def render(self, surf: pygame.Surface, snap: VisionSnapshot | None, status: PlayerStatus,
@@ -335,6 +343,8 @@ class WebcamPanel:
         if p is not None and p.state == TrackState.ACTIVE:
             if self.show_pose:
                 self._draw_pose(panel, p, to_panel)
+            self.body_fx.update(p, snap.frame_id)
+            self.body_fx.draw(panel, p, to_panel, clock)       # Task 4: gesture effects
             draw_face_effects(panel, p.face, to_panel, W * k, self.pid, status, clock)
         if p is not None and p.state == TrackState.LOST:
             cv2.putText(panel, "TRACKING LOST", (10, r.height // 2), cv2.FONT_HERSHEY_SIMPLEX,
@@ -379,14 +389,21 @@ def draw_debug(surf: pygame.Surface, snap: VisionSnapshot | None, perf_lines: li
     for p in snap.players:
         s = p.signals
         line = (f"P{p.pid + 1} {p.state.value:<8} conf {p.confidence:.2f} move {p.move:+.2f}"
-                f" off {p.move_offset:+.2f}")
+                f" lean {p.move_offset:+.2f}")
         text(surf, line, 20, (rect.left + 10, y), (255, 230, 160), "topleft", outline=0)
         y += 18
         st = {0.0: "armed", 2.0: "recover"}
-        line = (f"   L {st.get(s.get('state_left'), '-'):<7} elbow {s.get('elbow_left', float('nan')):3.0f}"
-                f" hook {s.get('hook_left', 0.0):+.2f} rise {s.get('rise_left', 0.0):+.2f}"
-                f"   R {st.get(s.get('state_right'), '-'):<7} elbow {s.get('elbow_right', float('nan')):3.0f}"
-                f" hook {s.get('hook_right', 0.0):+.2f} rise {s.get('rise_right', 0.0):+.2f}")
+        nan = float("nan")
+        for side, tag in (("left", "L"), ("right", "R")):
+            def g(kind, name, side=side):
+                return s.get(f"{kind}_{side}_{name}", nan)
+            line = (f"  {tag} {st.get(s.get('state_' + side), '-'):<7}"
+                    f" HOOK dx {g('hk', 'in'):+.2f} spd {g('hk', 'speed'):3.1f} elb {g('hk', 'elbow'):3.0f}/{g('hk', 'elbow2d'):3.0f}"
+                    f" | UPPER rise {g('up', 'rise'):+.2f} h {g('up', 'h'):+.2f}"
+                    f" reach {g('up', 'reach'):.2f} side {g('up', 'side'):.2f}")
+            text(surf, line, 18, (rect.left + 10, y), (230, 230, 230), "topleft", outline=0)
+            y += 16
+        line = "  need: HOOK dx>=0.4 spd>=2.2 elb 20-145, ends at head | UPPER rise>=0.6 h<=0 reach>=0.7 side<=0.6"
         text(surf, line, 20, (rect.left + 10, y), (230, 230, 230), "topleft", outline=0)
         y += 18
         line = (f"   block {s.get('block_dist', float('nan')):.2f} raise {s.get('raise', float('nan')):+.2f}"

@@ -14,7 +14,7 @@ import time
 import pygame
 
 from config import Config
-from evaluation.gesture_metrics import GestureLogger
+from evaluation.gesture_metrics import GestureFeatureLogger, GestureLogger
 from evaluation.performance import PerformanceMonitor
 from evaluation.session import Session
 from evaluation.tracking_metrics import TrackingLogger
@@ -101,6 +101,7 @@ class App:
         if self.eval_session and self.vision and self.tracking_logger is None:
             self.tracking_logger = TrackingLogger(self.eval_session)
             self.vision.frame_listeners.append(self.tracking_logger.on_frame)
+            self.vision.frame_listeners.append(GestureFeatureLogger(self.eval_session).on_frame)
 
     def _ensure_vision(self) -> bool:
         if self.vision is not None:
@@ -214,7 +215,7 @@ class App:
         elif key == pygame.K_F2:
             for p in self.panels:
                 p.show_pose = not p.show_pose
-        elif key in (pygame.K_F5, pygame.K_F6, pygame.K_F7, pygame.K_F8):
+        elif key in (pygame.K_F5, pygame.K_F6, pygame.K_F7, pygame.K_F8, pygame.K_F9, pygame.K_F10):
             self._annotate(key)
 
         phase = self.session.phase
@@ -260,7 +261,8 @@ class App:
             label = "stationary_end" if self.tracking_logger.stationary else "stationary_start"
         else:
             label = {pygame.K_F6: "identity_switch_observed", pygame.K_F7: "crossing_ok",
-                     pygame.K_F8: "crossing_failed"}[key]
+                     pygame.K_F8: "crossing_failed", pygame.K_F9: "missed_attack",
+                     pygame.K_F10: "false_attack"}[key]
         self.tracking_logger.annotate(now, pygame.key.name(key), label)
         self.banner.show(label.replace("_", " ").upper(), 0.7, color=GOLD)
 
@@ -356,7 +358,7 @@ class App:
             if self.session.phase == FightPhase.PAUSED:
                 self._render_pause()
         if self.debug:
-            r = pygame.Rect(self.W - 520, 120, 500, 430)
+            r = pygame.Rect(self.W - 600, 120, 580, 430)
             lines = self.perf.overlay_lines()
             if self.vision and snap:
                 lines.append(f"source {snap.source}  poses {snap.num_poses}  faces {snap.num_faces}"
@@ -432,7 +434,7 @@ class App:
                  "UPPERCUT: one fist up and forward to head height",
                  "BLOCK: both hands to face",
                  "SPECIAL: both arms up & hold",
-                 "MOVE: step or lean left / right"]
+                 "MOVE: lean your upper body left / right"]
         for h in hints:
             text(self.screen, h, 24, (cx, y), (215, 205, 230), outline=0)
             y += 26
@@ -466,7 +468,7 @@ class App:
                      (self.W // 2, y), (120, 240, 140))
             else:
                 n = snap.num_poses if snap else 0
-                hint = ("Player 1 stands on the LEFT, Player 2 on the RIGHT. Face the camera,"
+                hint = ("P1 on the LEFT, P2 on the RIGHT. Stand upright facing the camera,"
                         " upper body and hips visible, arms relaxed.")
                 text(self.screen, hint, 26, (self.W // 2, y), WHITE)
                 col = GOLD if n < 2 else (120, 240, 140)

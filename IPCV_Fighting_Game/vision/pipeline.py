@@ -59,6 +59,9 @@ class PlayerSnapshot:
     move_offset: float
     block: bool
     special_progress: float
+    last_attack: str             # most recent recognised attack ("hook_left", ...), "" if none
+    last_attack_t: float         # time.perf_counter() when it was recognised (-inf if none)
+    special_t: float             # time.perf_counter() of the last recognised special
     signals: dict[str, float]
     landmark_recoveries: int
     raw_landmarks: np.ndarray        # (33, 2) unfiltered detector output (NaN = not visible)
@@ -287,6 +290,10 @@ class VisionPipeline:
             if not tr.matched_this_frame:
                 raw[:] = np.nan
             f = tr.face
+            arms = [a for a in tr.gestures.arms.values() if a.last_kind]
+            recent = max(arms, key=lambda a: a.last_fire, default=None)
+            last_kind = f"{recent.last_kind}_{recent.side}" if recent else ""
+            last_t = recent.last_fire if recent else float("-inf")
 
             def img_pt(p):
                 return None if p is None else (float(p[0]), float(p[1] * aspect))
@@ -307,6 +314,8 @@ class VisionPipeline:
                 face=face, move=tr.gestures.move, move_offset=tr.gestures.move_offset,
                 block=tr.gestures.block_active,
                 special_progress=tr.gestures.special_progress,
+                last_attack=last_kind, last_attack_t=last_t,
+                special_t=tr.gestures._special_last,
                 signals=dict(tr.gestures.signals),
                 landmark_recoveries=tr.pose.img.recoveries,
                 raw_landmarks=raw,

@@ -111,7 +111,8 @@ def test_hook_from_guard_with_windup():
 
 def test_straight_arm_swing_is_not_a_hook():
     # Same horizontal sweep, but the arm is straight (elbow on the shoulder-wrist line).
-    seq = still(10) + move("left", (-1.4, 0.0), (0.9, -0.2), 4) + still(10, {"left": (0.9, -0.2)})
+    seq = still(10, {"left": (-1.4, 0.0)}) + move("left", (-1.4, 0.0), (0.9, -0.2), 4) \
+        + still(10, {"left": (0.9, -0.2)})
     assert run(seq) == []
 
 
@@ -191,3 +192,72 @@ def test_pulling_back_after_uppercut_does_not_fire():
     seq = (still(10) + move("right", REST["right"], top, 4) + still(8, {"right": top})
            + move("right", top, REST["right"], 4) + still(15))
     assert run(seq) == ["uppercut_right"]
+
+
+def test_compact_uppercut_to_chin_with_bent_arm():
+    # From chest height to chin height, elbow bent, fist slightly forward.
+    start, end = (-0.1, 0.35), (-0.45, -0.3)
+    seq = still(10, {"right": start}) + move("right", start, end, 4, depth=(0.2, 0.6),
+                                             elbow=lambda f: (0.1, 0.1, 0.3)) \
+        + still(10, {"right": end}, {"right": 0.6}, {"right": (0.1, 0.1, 0.3)})
+    assert run(seq) == ["uppercut_right"]
+
+
+def test_uppercut_with_other_hand_in_high_guard():
+    high_guard = (0.35, -0.85)                 # other fist at eye level
+    low = (-0.1, 0.35)
+    frames = still(15, {"left": high_guard, "right": low})
+    frames += move("right", low, (-0.4, -0.4), 4, other={"left": high_guard}, depth=(0.2, 0.6))
+    frames += still(15, {"left": high_guard, "right": (-0.4, -0.4)}, {"right": 0.6})
+    out = [g for g in run(frames) if g != "block_start"]
+    assert out == ["uppercut_right"], out
+
+
+def test_hook_still_detected_when_fast_fist_is_blurry():
+    """During a fast punch MediaPipe's wrist/elbow visibility drops (motion blur)."""
+    cfg = Config()
+    pose = PlayerPose(cfg.pose, ASPECT)
+    rec = GestureRecognizer(0, cfg.gestures)
+    frames = still(10) + hook_frames("left", REST["left"], (1.2, -0.1)) \
+        + still(10, {"left": (1.2, -0.1)}, {"left": 0.8}, {"left": bent_elbow("left")(1)})
+    out = []
+    for k, (w, d, e) in enumerate(frames):
+        det = make_pose(w, d, e)
+        if 10 <= k < 14:                          # the swing frames: blurry arm
+            det.image[[L_WRIST, L_ELBOW], 3] = 0.35
+        pose.update(det, k / FPS)
+        out += [ev.gesture for ev in rec.update(pose, k / FPS, k / FPS)]
+    assert out == ["hook_left"]
+
+
+def test_optional_hook_swung_away_from_the_body():
+    # hook_direction="both" also accepts an OUTWARD swing (off by default: the
+    # wind-up of a normal hook would then fire as a second hook).
+    cfg = Config()
+    cfg.gestures.hook_direction = "both"          # optional mode (default: inward only)
+    pose = PlayerPose(cfg.pose, ASPECT)
+    rec = GestureRecognizer(0, cfg.gestures)
+    frames = still(15, GUARD)
+    frames += hook_frames("left", GUARD["left"], (-1.0, -0.5), other={"right": GUARD["right"]})
+    frames += still(10, {"left": (-1.0, -0.5), "right": GUARD["right"]})
+    out = []
+    for k, (w, d, e) in enumerate(frames):
+        pose.update(make_pose(w, d, e), k / FPS)
+        out += [ev.gesture for ev in rec.update(pose, k / FPS, k / FPS) if ev.gesture.startswith("hook")]
+    assert out == ["hook_left"], out
+
+
+def test_inward_only_mode_ignores_outward_swing():
+    cfg = Config()
+    cfg.gestures.hook_direction = "inward"
+    pose = PlayerPose(cfg.pose, ASPECT)
+    rec = GestureRecognizer(0, cfg.gestures)
+    frames = still(15, GUARD) + hook_frames("left", GUARD["left"], (-1.0, -0.5),
+                                            other={"right": GUARD["right"]}) \
+        + still(10, {"left": (-1.0, -0.5), "right": GUARD["right"]})
+    out = []
+    for k, (w, d, e) in enumerate(frames):
+        pose.update(make_pose(w, d, e), k / FPS)
+        out += [ev.gesture for ev in rec.update(pose, k / FPS, k / FPS)
+                if ev.gesture.startswith("hook")]
+    assert out == []
