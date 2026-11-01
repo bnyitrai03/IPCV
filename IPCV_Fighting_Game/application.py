@@ -291,7 +291,7 @@ class App:
                 self.sound.play("bell")
             elif e.kind == "fight":
                 self.banner.show("FIGHT!", 0.9, color=(255, 90, 60))
-            elif e.kind == "action" and d["action"].split("_")[0] in ("hook", "uppercut"):
+            elif e.kind == "action" and d["action"].startswith("uppercut"):
                 self.sound.play("whoosh")
             elif e.kind == "action" and d["action"] == "special_denied":
                 f = self.session.state.fighters[d["player"]]
@@ -303,7 +303,7 @@ class App:
                 atk = d["attacker"]
                 blocked = e.kind == "block"
                 color = STYLES[atk].accent
-                strength = {"special": 1.6, "uppercut": 1.4, "hook": 1.15}.get(
+                strength = {"special": 1.6, "uppercut": 1.4}.get(
                     d["attack"].split("_")[0], 1.0)
                 self.effects.impact(d["x"], d["y"], color, strength, blocked)
                 self.sound.play("block" if blocked else "hit")
@@ -314,8 +314,6 @@ class App:
                     if d["attack"].startswith("uppercut"):
                         self.effects.text("UPPERCUT!", d["x"], d["y"] - 100, (255, 200, 60), 44, 0.9)
                         self.effects.shake(9, 0.25)
-                    elif d["attack"].startswith("hook"):
-                        self.effects.text("HOOK!", d["x"], d["y"] - 100, (255, 230, 120), 38, 0.7)
                     if d["counter"]:
                         self.effects.text("COUNTER!", d["x"], d["y"] - 70, (255, 120, 60), 40, 1.0)
                     if d["combo"] >= 2:
@@ -381,7 +379,7 @@ class App:
         self.effects.draw(surf, shake)
 
     def _attack_trail(self, f, renderer) -> None:
-        """Motion trail on the striking fist so hook and uppercut read differently."""
+        """Motion trail on the striking fist during an uppercut."""
         a = f.attack
         if f.state != FighterState.PUNCH or a is None:
             return
@@ -392,7 +390,7 @@ class App:
         if fist is None:
             return
         color = STYLES[f.player_id].accent
-        self.effects.swing_trail(fist[0], fist[1], spec.name, color, f.facing)
+        self.effects.swing_trail(fist[0], fist[1], color)
         if spec.name == "uppercut" and abs(f.state_time - spec.startup) < 0.02:
             self.effects.dust(f.x, f.ground_y, f.facing)
             self.effects.dust(f.x, f.ground_y, -f.facing)
@@ -430,8 +428,7 @@ class App:
             panel.render(self.screen, snap, status, self.clock_t, label)
         cx = self.W // 2
         y = top + 26
-        hints = ["HOOK: elbow bent 90°, swing fist across your body",
-                 "UPPERCUT: one fist up and forward to head height",
+        hints = ["UPPERCUT: one fist up and forward to head height",
                  "BLOCK: both hands to face",
                  "SPECIAL: both arms up & hold",
                  "MOVE: lean your upper body left / right"]

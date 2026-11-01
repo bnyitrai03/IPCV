@@ -19,12 +19,10 @@ import numpy as np
 from evaluation.session import Session, parse_float, read_csv
 from vision.gesture_recognition import GestureEvent
 
-ATTACK_GESTURES = ("hook_left", "hook_right",
-                   "uppercut_left", "uppercut_right", "block_start", "special")
+ATTACK_GESTURES = ("uppercut_left", "uppercut_right", "block_start", "special")
 
 
-GESTURE_FEATURES = ("hook_in", "hook_speed", "elbow3d", "elbow2d",
-                    "up_rise", "up_h", "up_reach", "up_peak")
+GESTURE_FEATURES = ("up_rise", "up_h", "up_reach", "up_peak")
 
 
 class GestureFeatureLogger:

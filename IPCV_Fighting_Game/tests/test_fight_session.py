@@ -97,14 +97,14 @@ def test_webcam_inputs_forward_held_state_and_one_shot_gestures():
     snap = registered_snapshot(
         FakePlayer(TrackState.ACTIVE, move=1.0, block=True),
         FakePlayer(TrackState.LOST, move=-1.0, block=True))
-    events = [gesture(0, "hook_right", ts=10.0), gesture(0, "block_start"),
+    events = [gesture(0, "uppercut_right", ts=10.0), gesture(0, "block_start"),
               gesture(1, "special", ts=11.0)]
     session.observe(snap, events, 12.0)
 
     assert session.pending[0].move == 1.0
     assert session.pending[0].block
-    assert session.pending[0].hook_right
-    assert session.pending[0].source_ts["hook_right"] == 10.0
+    assert session.pending[0].uppercut_right
+    assert session.pending[0].source_ts["uppercut_right"] == 10.0
     assert session.pending[1].move == 0.0      # LOST is neutral
     assert not session.pending[1].block
     assert session.pending[1].special

@@ -5,42 +5,29 @@ how far the player stands from the camera. Image y points down.
 
 Attacks (per arm)
 -----------------
-* **Hook** — the elbow is bent and the fist sweeps fast *horizontally*
-  towards / across the body midline, ending around head height (it may start
-  from chest height). The sweep is measured from the start of the fastest inward
-  motion, at least two frames back (for a hook from the guard or from the arm
-  out to the side: the turning point out -> in). The arm counts as bent if
-  EITHER the 3D elbow angle from MediaPipe's estimated world landmarks OR the
-  2D image angle lies in ``[hook_min_elbow_deg, hook_max_elbow_deg]`` (most-bent
-  quarter of the sweep). The 2D angle is only used when neither arm segment is
-  foreshortened, so a straight-arm swing is still not a hook.
-  ``hook_direction="both"`` also accepts outward swings (off by default: the
-  wind-up of a hook would fire as a second hook).
 * **Uppercut** — one fist driven fast upwards *and forwards*, ending at least
-  at chin height, roughly above its own shoulder (``uppercut_max_side``: raising
-  the arm out wide is the wind-up of a hook, not an uppercut), with the fist
-  away from the shoulder (bent arm is fine). The rise is measured from the
-  lowest point of the last 0.4 s (a dip first is fine) and must be clearly more
-  up than sideways; "fast" = peak fist speed. It is confirmed after
-  ``uppercut_confirm_s``: cancelled if both arms go up (= special), if the fist
-  drops again (tracking glitch) or if it starts sweeping inward (= a hook, which
-  then fires instead). A guard hand next to the face does not cancel it.
+  at chin height, roughly above its own shoulder (``uppercut_max_side``:
+  raising the arm out wide does not count), with the fist away from the
+  shoulder (bent arm is fine). The rise is measured from the lowest point of
+  the last 0.4 s (a dip first is fine) and must be clearly more up than
+  sideways; "fast" = peak fist speed. It is confirmed after
+  ``uppercut_confirm_s``: cancelled if both arms go up (= special) or if the
+  fist drops again (tracking glitch). A guard hand next to the face does not
+  cancel it.
 
 Robustness to real webcam tracking (tuned on a recorded session)
 ---------------------------------------------------------------
-Wrist/elbow are taken from the RAW detection of each frame, not the smoothed
+The wrist is taken from the RAW detection of each frame, not the smoothed
 landmarks: a wrist outside the picture (only guessed by the model, often onto
 a hand-like object such as a ball on a shelf) counts as missing, and a
 physically impossible jump (> ``max_fist_speed``) is dropped as a glitch. The
 smoothing would blend such a glitch into a fake fast punch. Short gaps
-(``arm_gap_tolerance_s``, motion blur) keep the motion; a hook must be tracked
-without gaps. After the special, both arms re-arm only once lowered.
+(``arm_gap_tolerance_s``, motion blur) keep the motion. After the special,
+both arms re-arm only once lowered.
 
-Both attacks are found in a short trail (``hook_window_s``) of recent fist
-positions, measured from the point that gives the fastest motion (the turning
-point of a wind-up or the bottom of a dip). State machine per arm::
+The attack is found in a short trail (``attack_window_s``) of recent fist
+positions, measured from the lowest point of a dip. State machine per arm::
 
-    ARMED ──hook──▶ fire ──▶ RECOVER
     ARMED ──uppercut──▶ confirm (not a two-arm raise) ──▶ fire ──▶ RECOVER
     RECOVER ──fist back (or arm pulled in) + slowed down + cooldown──▶ ARMED
 
@@ -75,10 +62,10 @@ from enum import Enum
 import numpy as np
 
 from config import GestureConfig
-from vision.pose_tracking import (L_ELBOW, L_HIP, L_SHOULDER, L_WRIST, NOSE, R_ELBOW, R_HIP,
-                                  R_SHOULDER, R_WRIST, PlayerPose)
+from vision.pose_tracking import (L_HIP, L_SHOULDER, L_WRIST, NOSE, R_HIP, R_SHOULDER, R_WRIST,
+                                  PlayerPose)
 
-ARM_JOINTS = {"left": (L_SHOULDER, L_ELBOW, L_WRIST), "right": (R_SHOULDER, R_ELBOW, R_WRIST)}
+ARM_JOINTS = {"left": (L_SHOULDER, L_WRIST), "right": (R_SHOULDER, R_WRIST)}
 
 
 class ArmState(Enum):
@@ -89,7 +76,7 @@ class ArmState(Enum):
 @dataclass
 class GestureEvent:
     player_id: int
-    gesture: str              # hook_*, uppercut_*, special, block_start, block_end
+    gesture: str              # uppercut_*, special, block_start, block_end
     capture_ts: float         # camera timestamp of the frame that confirmed it
     onset_ts: float           # camera timestamp of the frame where the motion started
     processed_ts: float       # perf_counter when the recogniser emitted it
@@ -100,8 +87,6 @@ class ArmSample:
     t: float
     pos: np.ndarray           # wrist, isotropic image coords / sw
     reach: float              # max(2D, 3D) wrist-shoulder distance / sw
-    elbow_deg: float          # elbow angle (180 = straight arm), nan if elbow not visible
-    elbow2d: float = math.nan  # image-plane elbow angle (nan if an arm segment is foreshortened)
 
 
 @dataclass
@@ -113,18 +98,11 @@ class ArmTracker:
     prev: ArmSample | None = None
     pending_uppercut: tuple | None = None      # (since, onset, sample, values)
     trail: deque = field(default_factory=lambda: deque(maxlen=30))   # recent ArmSamples
-    last_kind: str = ""                        # last attack fired ("hook"/"uppercut"), for effects
+    last_kind: str = ""                        # last attack fired ("uppercut"), for effects
     missing_since: float | None = None         # wrist lost since (motion-blur gap tolerance)
     inst_speed: float = 0.0                    # current fist speed, sw/s
     glitches: int = 0                          # consecutive rejected landmark jumps
     wait_low: bool = False                     # after a special: re-arm only once lowered
-
-
-def _angle_deg(a: np.ndarray, b: np.ndarray) -> float:
-    na, nb = np.linalg.norm(a), np.linalg.norm(b)
-    if na < 1e-6 or nb < 1e-6:
-        return math.nan
-    return math.degrees(math.acos(float(np.clip(np.dot(a, b) / (na * nb), -1.0, 1.0))))
 
 
 class GestureRecognizer:
@@ -220,33 +198,20 @@ class GestureRecognizer:
 
     def _sample(self, pose: PlayerPose, side: str, t: float, sw: float,
                 sw_world: float | None) -> ArmSample | None:
-        s_idx, e_idx, w_idx = ARM_JOINTS[side]
+        s_idx, w_idx = ARM_JOINTS[side]
         s = pose.point(s_idx)
-        # Wrist and elbow: the RAW detection of this frame (not the smoothed value).
-        # The smoothing holds and blends points, which turns a one-frame tracking
+        # Wrist: the RAW detection of this frame (not the smoothed value). The
+        # smoothing holds and blends points, which turns a one-frame tracking
         # glitch into a fake fast punch; on raw points such a glitch is a single
         # impossible jump that _update_arm drops (max_fist_speed).
-        e, w = self._raw_point(pose, e_idx), self._raw_point(pose, w_idx)
+        w = self._raw_point(pose, w_idx)
         if s is None or w is None:
             return None
         reach = float(np.linalg.norm(w - s) / sw)
-        elbow = math.nan
-        ws, we, ww = pose.world_point(s_idx), pose.world_point(e_idx), pose.world_point(w_idx)
+        ws, ww = pose.world_point(s_idx), pose.world_point(w_idx)
         if sw_world is not None and ws is not None and ww is not None:
             reach = max(reach, float(np.linalg.norm(ww - ws) / sw_world))
-        if ws is not None and we is not None and ww is not None:
-            # 3D angle: a bent arm with the forearm pointing at the camera looks
-            # straight in 2D, so the estimated world landmarks are preferred.
-            elbow = _angle_deg(ws - we, ww - we)
-        elif e is not None:
-            elbow = _angle_deg(s - e, w - e)
-        elbow2d = math.nan
-        if e is not None and min(np.linalg.norm(s - e), np.linalg.norm(w - e)) >= \
-                self.cfg.elbow2d_min_segment * sw:
-            # Image angle, only when neither arm segment is foreshortened (an arm
-            # pointing at the camera looks short and its 2D angle is meaningless).
-            elbow2d = _angle_deg(s - e, w - e)
-        return ArmSample(t, w / sw, reach, elbow, elbow2d)
+        return ArmSample(t, w / sw, reach)
 
     # ------------------------------------------------------------------ update
     def update(self, pose: PlayerPose, capture_ts: float, now: float) -> list[GestureEvent]:
@@ -315,22 +280,15 @@ class GestureRecognizer:
         # ---------------- attacks (per arm) ----------------
         sw_world = self._world_sw(pose)
         geo = {"nose": None if nose is None else nose / sw,
-               "mid_x": None if ls is None or rs is None else float((ls[0] + rs[0]) / 2 / sw),
                "shoulder_y": None if ls is None or rs is None else float((ls[1] + rs[1]) / 2 / sw),
                "sh_x": {"left": None if ls is None else float(ls[0] / sw),
                         "right": None if rs is None else float(rs[0] / sw)}}
         samples = {side: self._sample(pose, side, capture_ts, sw, sw_world)
                    for side in ("left", "right")}
-        # Is the OTHER hand clearly above the head? (both hands up = special / lowering
-        # from it, not a one-arm hook)
-        geo["other_high"] = {
-            side: (geo["nose"] is not None and samples[o] is not None
-                   and samples[o].pos[1] < geo["nose"][1] - 0.3)
-            for side, o in (("left", "right"), ("right", "left"))}
         # Only the two-arm special pose suppresses attacks. A guard (= block) does
-        # NOT: a hook travels around the face, so the "hands near face" test stays
-        # true during it. An attack out of the guard ends the block instead; a
-        # still guard never fires because attacks need fast motion.
+        # NOT: the fist can rise in front of the face. An attack out of the guard
+        # ends the block instead; a still guard never fires because attacks need
+        # fast motion.
         suppress = raised
         for side in ("left", "right"):
             other = "right" if side == "left" else "left"
@@ -405,34 +363,15 @@ class GestureRecognizer:
         for name, v in (("up_rise", rise), ("up_h", uph), ("up_reach", cur.reach), ("up_peak", peak)):
             self.signals[f"now_{arm.side}_{name}"] = v
         self.signals[f"now_{arm.side}_up_side"] = side_off
-        sweeping = self._inward_speed(arm, cur, geo) > cfg.uppercut_max_inward_speed
-        self.signals[f"now_{arm.side}_up_inward"] = self._inward_speed(arm, cur, geo)
         if (peak >= cfg.uppercut_min_peak_speed
                 and rise >= cfg.uppercut_min_rise
                 and rise >= cfg.uppercut_dominance * abs(dx)          # clearly upwards
                 and uph <= 0.0                                        # ends at chin height+
                 and cur.reach >= cfg.uppercut_min_reach               # fist away from shoulder
                 # in front of / above the own shoulder, NOT far out to the side
-                # (raising the arm out wide is the wind-up of a hook)
-                and side_off <= cfg.uppercut_max_side
-                and not sweeping):                                    # turning into a hook
+                and side_off <= cfg.uppercut_max_side):
             return start
         return None
-
-    @staticmethod
-    def _inward_speed(arm: ArmTracker, cur: ArmSample, geo: dict) -> float:
-        """Horizontal fist speed towards the body midline over the last ~0.1 s (sw/s)."""
-        mid, sh_x = geo["mid_x"], geo["sh_x"][arm.side]
-        past = [p for p in arm.trail if 0.05 <= cur.t - p.t <= 0.12]
-        if mid is None or sh_x is None or not past:
-            return 0.0
-        p = past[-1]
-        side_sign = 1.0 if sh_x >= mid else -1.0
-        return float((p.pos[0] - cur.pos[0]) * side_sign) / (cur.t - p.t)
-
-    @staticmethod
-    def _max_gap(seg: list[ArmSample]) -> float:
-        return max((b.t - a.t for a, b in zip(seg, seg[1:])), default=0.0)
 
     def _hold_peak(self, side: str, key: str, score: float, values: dict, t: float) -> None:
         """Keep the strongest recent attempt for 2 s so it can be read in the F1 panel."""
@@ -481,11 +420,10 @@ class GestureRecognizer:
         arm.glitches = 0
         arm.prev = cur
         arm.trail.append(cur)
-        while arm.trail and cur.t - arm.trail[0].t > cfg.hook_window_s:
+        while arm.trail and cur.t - arm.trail[0].t > cfg.attack_window_s:
             arm.trail.popleft()
         s = self.signals
         s[f"reach_{arm.side}"] = cur.reach
-        s[f"elbow_{arm.side}"] = cur.elbow_deg
         s[f"state_{arm.side}"] = {"armed": 0.0, "recover": 2.0}[arm.state.value]
 
         inst = 0.0
@@ -506,12 +444,6 @@ class GestureRecognizer:
                 arm.pending_uppercut = None
                 arm.state = ArmState.RECOVER          # consume: it was a two-arm raise
                 arm.onset = onset
-                return None
-            if self._inward_speed(arm, cur, geo) > cfg.uppercut_max_inward_speed:
-                arm.pending_uppercut = None           # it turns into a hook: let that fire
-                onset = self._detect_hook(arm, cur, geo)
-                if onset is not None and not suppress:
-                    return self._fire(arm, "hook", onset, cur, now)
                 return None
             # The fist must STAY up while confirming: a tracking glitch (the wrist
             # point flickering to another spot for a frame or two) jumps back down.
@@ -535,80 +467,13 @@ class GestureRecognizer:
             if (back or retracted) and settled and now - arm.last_fire >= cfg.attack_cooldown_s:
                 arm.state = ArmState.ARMED
                 arm.onset = None
-                arm.trail.clear()        # the pull-back must not count as a hook wind-up
+                arm.trail.clear()        # the pull-back must not count as the start of an attack
             return None
 
-        # ARMED: look for either attack in the recent motion trail.
-        onset = self._detect_hook(arm, cur, geo)
-        if onset is not None and not suppress:
-            return self._fire(arm, "hook", onset, cur, now)
+        # ARMED: look for the uppercut in the recent motion trail.
         onset = self._detect_uppercut(arm, cur, geo)
         if onset is not None and not suppress:
             arm.pending_uppercut = (capture_ts, onset, cur)
-        return None
-
-    def _detect_hook(self, arm: ArmTracker, cur: ArmSample,
-                     geo: dict) -> ArmSample | None:
-        """Hook = bent elbow + fast, mostly HORIZONTAL fist sweep at chest-head height.
-
-        ``hook_direction="both"`` (default) accepts a sweep across the body AND a
-        sweep away from it (players side by side naturally swing towards the
-        opponent, which is outward for one arm). ``"inward"`` = only across the body.
-        The sweep is measured from the point the fist moved away from fastest
-        (for a hook from the guard: the turning point of the wind-up)."""
-        cfg = self.cfg
-        mid, sh_x, sh_y = geo["mid_x"], geo["sh_x"][arm.side], geo["shoulder_y"]
-        if mid is None or sh_x is None or sh_y is None or len(arm.trail) < 3:
-            return None
-        side_sign = 1.0 if sh_x >= mid else -1.0          # which side of the body this arm is on
-        # At least two frame intervals back: a one-frame jump of the landmark is
-        # not a swing (a real hook is visible over several frames).
-        past = list(arm.trail)[:-2]
-        if not past:
-            return None
-        directions = (1.0,) if cfg.hook_direction == "inward" else (1.0, -1.0)
-
-        best = None
-        for d in directions:                               # +1 = inward, -1 = outward
-            def travel(p: ArmSample) -> float:             # horizontal travel p -> cur in direction d
-                return float(p.pos[0] - cur.pos[0]) * side_sign * d
-
-            i = max(range(len(past)), key=lambda k: travel(past[k]) / max(cur.t - past[k].t, 1e-3))
-            dx = travel(past[i])
-            if best is None or dx > best[1]:
-                best = (i, dx, d)
-        apex_i, horiz, direction = best
-        apex = past[apex_i]
-        dy = float(cur.pos[1] - apex.pos[1])
-        dt = cur.t - apex.t
-        sweep = past[apex_i:] + [cur]
-        # Most-bent angle during the sweep: the arm is clearly bent at some point
-        # of a hook, while the per-frame estimate of a fast arm is noisy.
-        a3 = [p.elbow_deg for p in sweep if p.elbow_deg == p.elbow_deg]
-        a2 = [p.elbow2d for p in sweep if p.elbow2d == p.elbow2d]
-        elbow = float(np.percentile(a3, 25)) if a3 else math.nan
-        elbow2d = float(np.percentile(a2, 25)) if a2 else math.nan
-        speed = math.hypot(horiz, dy) / max(dt, 1e-3)
-        self._hold_peak(arm.side, "hk", horiz, {"in": horiz * direction, "elbow": elbow,
-                                                "elbow2d": elbow2d, "dy": dy, "speed": speed},
-                        cur.t)
-        now_ = self.signals                     # per-frame values (gesture_features.csv)
-        now_[f"now_{arm.side}_hook_in"], now_[f"now_{arm.side}_hook_speed"] = horiz * direction, speed
-        now_[f"now_{arm.side}_elbow3d"], now_[f"now_{arm.side}_elbow2d"] = elbow, elbow2d
-        if dt <= 1e-3 or dt > cfg.hook_max_duration_s:
-            return None
-        nose = geo["nose"]
-        # Bent arm if EITHER the 3D estimate OR the (unforeshortened) image angle says so.
-        bent = (cfg.hook_min_elbow_deg <= elbow <= cfg.hook_max_elbow_deg
-                or cfg.hook_min_elbow_deg <= elbow2d <= cfg.hook_max_elbow_deg)
-        if (horiz >= cfg.hook_min_dx and horiz >= cfg.hook_dominance * abs(dy)
-                and speed >= cfg.attack_min_speed and bent
-                and nose is not None                                   # around head height:
-                and cfg.hook_min_y <= apex.pos[1] - nose[1] <= cfg.hook_max_start_y
-                and cfg.hook_min_y <= cur.pos[1] - nose[1] <= cfg.hook_max_y
-                and self._max_gap(sweep) <= cfg.max_sample_gap_s       # tracked continuously
-                and not geo.get("other_high", {}).get(arm.side, False)):  # not both hands up
-            return apex
         return None
 
     def _fire(self, arm: ArmTracker, kind: str, onset: ArmSample, cur: ArmSample,

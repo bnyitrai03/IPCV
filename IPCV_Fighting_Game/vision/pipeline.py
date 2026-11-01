@@ -59,7 +59,7 @@ class PlayerSnapshot:
     move_offset: float
     block: bool
     special_progress: float
-    last_attack: str             # most recent recognised attack ("hook_left", ...), "" if none
+    last_attack: str             # most recent recognised attack ("uppercut_left", ...), "" if none
     last_attack_t: float         # time.perf_counter() when it was recognised (-inf if none)
     special_t: float             # time.perf_counter() of the last recognised special
     signals: dict[str, float]

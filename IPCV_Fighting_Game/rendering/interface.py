@@ -398,12 +398,12 @@ def draw_debug(surf: pygame.Surface, snap: VisionSnapshot | None, perf_lines: li
             def g(kind, name, side=side):
                 return s.get(f"{kind}_{side}_{name}", nan)
             line = (f"  {tag} {st.get(s.get('state_' + side), '-'):<7}"
-                    f" HOOK dx {g('hk', 'in'):+.2f} spd {g('hk', 'speed'):3.1f} elb {g('hk', 'elbow'):3.0f}/{g('hk', 'elbow2d'):3.0f}"
-                    f" | UPPER rise {g('up', 'rise'):+.2f} h {g('up', 'h'):+.2f}"
-                    f" reach {g('up', 'reach'):.2f} side {g('up', 'side'):.2f}")
+                    f" UPPER rise {g('up', 'rise'):+.2f} h {g('up', 'h'):+.2f}"
+                    f" reach {g('up', 'reach'):.2f} side {g('up', 'side'):.2f}"
+                    f" spd {g('up', 'speed'):3.1f}")
             text(surf, line, 18, (rect.left + 10, y), (230, 230, 230), "topleft", outline=0)
             y += 16
-        line = "  need: HOOK dx>=0.4 spd>=2.2 elb 20-145, ends at head | UPPER rise>=0.6 h<=0 reach>=0.7 side<=0.6"
+        line = "  need: UPPER rise>=0.6 peak>=3.0 h<=0 reach>=0.7 side<=0.6"
         text(surf, line, 20, (rect.left + 10, y), (230, 230, 230), "topleft", outline=0)
         y += 18
         line = (f"   block {s.get('block_dist', float('nan')):.2f} raise {s.get('raise', float('nan')):+.2f}"

@@ -1,6 +1,6 @@
-"""Attack recognition: hook (elbow ~90 deg + horizontal sweep), uppercut (up and
-forward to head height), and motions that must NOT fire (straight punches,
-straight-arm swings, slow moves, guard, two-arm raise, holding, pulling back)."""
+"""Attack recognition: uppercut (up and forward to head height), and motions
+that must NOT fire (straight punches, side swings, slow moves, guard, two-arm
+raise, holding, pulling back)."""
 import numpy as np
 
 from config import Config
@@ -79,43 +79,6 @@ def move(side, a, b, n, other=None, depth=(0.0, 0.0), elbow=None):
     return frames
 
 
-def bent_elbow(side):
-    """Elbow out to the side at shoulder height and forward: ~90 deg arm (hook)."""
-    out = -1 if side == "left" else 1          # image direction away from the body
-    return lambda f: (out * 0.2, 0.0, 0.7)
-
-
-def hook_frames(side, start, end, n=4, other=None):
-    return move(side, start, end, n, other=other, depth=(0.8, 0.8), elbow=bent_elbow(side))
-
-
-# ----------------------------------------------------------------- hooks
-def test_hook_with_bent_elbow():
-    seq = still(10) + hook_frames("left", REST["left"], (1.2, -0.1)) \
-        + still(10, {"left": (1.2, -0.1)}, {"left": 0.8}, {"left": bent_elbow("left")(1)})
-    assert run(seq) == ["hook_left"]
-    seq = still(10) + hook_frames("right", REST["right"], (-1.2, -0.1)) \
-        + still(10, {"right": (-1.2, -0.1)}, {"right": 0.8}, {"right": bent_elbow("right")(1)})
-    assert run(seq) == ["hook_right"]
-
-
-def test_hook_from_guard_with_windup():
-    frames = still(15, GUARD)
-    frames += move("left", GUARD["left"], (-0.45, -0.5), 5, other={"right": GUARD["right"]},
-                   elbow=bent_elbow("left"), depth=(0.6, 0.8))
-    frames += hook_frames("left", (-0.45, -0.5), (0.9, -0.6), other={"right": GUARD["right"]})
-    frames += still(10, {"left": (0.9, -0.6), "right": GUARD["right"]})
-    out = [g for g in run(frames) if g != "block_start"]
-    assert out == ["hook_left"], out
-
-
-def test_straight_arm_swing_is_not_a_hook():
-    # Same horizontal sweep, but the arm is straight (elbow on the shoulder-wrist line).
-    seq = still(10, {"left": (-1.4, 0.0)}) + move("left", (-1.4, 0.0), (0.9, -0.2), 4) \
-        + still(10, {"left": (0.9, -0.2)})
-    assert run(seq) == []
-
-
 # ------------------------------------------------------------- uppercuts
 def test_uppercut_up_and_forward():
     end = (-0.35, -1.1)
@@ -153,7 +116,7 @@ def test_raising_both_arms_is_special_not_uppercut():
 
 
 # ------------------------------------------------------ must NOT fire
-def test_straight_punches_do_nothing():
+def test_straight_punches_and_swings_do_nothing():
     # Sideways, diagonal and at-the-camera straight punches are not game actions.
     for seq in (still(10) + move("left", REST["left"], (-1.6, 0.0), 4) + still(10, {"left": (-1.6, 0.0)}),
                 still(10) + move("right", REST["right"], (1.4, -0.6), 4) + still(10, {"right": (1.4, -0.6)}),
@@ -163,8 +126,8 @@ def test_straight_punches_do_nothing():
 
 
 def test_slow_and_downward_motions_do_not_fire():
-    slow = move("left", REST["left"], (1.2, -0.1), 60, depth=(0.8, 0.8), elbow=bent_elbow("left"))
-    assert run(still(10) + slow) == []                                   # 2 s "hook"
+    slow = move("right", REST["right"], (-0.35, -1.1), 60, depth=(0.0, 0.6))
+    assert run(still(10) + slow) == []                                   # 2 s "uppercut"
     seq = still(10, GUARD) + move("left", GUARD["left"], (0.2, 0.9), 3, other={"right": GUARD["right"]})
     assert [g for g in run(seq) if g != "block_start"] == []
 
@@ -179,12 +142,12 @@ def test_raising_guard_and_holding_it_only_blocks():
 
 
 def test_holding_does_not_repeat_and_pulling_back_rearms():
-    end = (1.2, -0.1)
-    held = still(40, {"left": end}, {"left": 0.8}, {"left": bent_elbow("left")(1)})
-    seq = (still(10) + hook_frames("left", REST["left"], end) + held
-           + move("left", end, REST["left"], 6) + still(15)
-           + hook_frames("left", REST["left"], end) + still(5, {"left": end}))
-    assert run(seq) == ["hook_left", "hook_left"]
+    top = (-0.35, -1.1)
+    held = still(40, {"right": top}, {"right": 0.6})
+    seq = (still(10) + move("right", REST["right"], top, 4, depth=(0.0, 0.6)) + held
+           + move("right", top, REST["right"], 6) + still(15)
+           + move("right", REST["right"], top, 4, depth=(0.0, 0.6)) + still(5, {"right": top}))
+    assert run(seq) == ["uppercut_right", "uppercut_right"]
 
 
 def test_pulling_back_after_uppercut_does_not_fire():
@@ -213,51 +176,19 @@ def test_uppercut_with_other_hand_in_high_guard():
     assert out == ["uppercut_right"], out
 
 
-def test_hook_still_detected_when_fast_fist_is_blurry():
-    """During a fast punch MediaPipe's wrist/elbow visibility drops (motion blur)."""
+def test_uppercut_still_detected_when_fast_fist_is_blurry():
+    """During a fast punch MediaPipe's wrist visibility drops (motion blur)."""
     cfg = Config()
     pose = PlayerPose(cfg.pose, ASPECT)
     rec = GestureRecognizer(0, cfg.gestures)
-    frames = still(10) + hook_frames("left", REST["left"], (1.2, -0.1)) \
-        + still(10, {"left": (1.2, -0.1)}, {"left": 0.8}, {"left": bent_elbow("left")(1)})
+    end = (-0.35, -1.1)
+    frames = still(10) + move("right", REST["right"], end, 4, depth=(0.0, 0.6)) \
+        + still(15, {"right": end}, {"right": 0.6})
     out = []
     for k, (w, d, e) in enumerate(frames):
         det = make_pose(w, d, e)
         if 10 <= k < 14:                          # the swing frames: blurry arm
-            det.image[[L_WRIST, L_ELBOW], 3] = 0.35
+            det.image[[R_WRIST, R_ELBOW], 3] = 0.35
         pose.update(det, k / FPS)
         out += [ev.gesture for ev in rec.update(pose, k / FPS, k / FPS)]
-    assert out == ["hook_left"]
-
-
-def test_optional_hook_swung_away_from_the_body():
-    # hook_direction="both" also accepts an OUTWARD swing (off by default: the
-    # wind-up of a normal hook would then fire as a second hook).
-    cfg = Config()
-    cfg.gestures.hook_direction = "both"          # optional mode (default: inward only)
-    pose = PlayerPose(cfg.pose, ASPECT)
-    rec = GestureRecognizer(0, cfg.gestures)
-    frames = still(15, GUARD)
-    frames += hook_frames("left", GUARD["left"], (-1.0, -0.5), other={"right": GUARD["right"]})
-    frames += still(10, {"left": (-1.0, -0.5), "right": GUARD["right"]})
-    out = []
-    for k, (w, d, e) in enumerate(frames):
-        pose.update(make_pose(w, d, e), k / FPS)
-        out += [ev.gesture for ev in rec.update(pose, k / FPS, k / FPS) if ev.gesture.startswith("hook")]
-    assert out == ["hook_left"], out
-
-
-def test_inward_only_mode_ignores_outward_swing():
-    cfg = Config()
-    cfg.gestures.hook_direction = "inward"
-    pose = PlayerPose(cfg.pose, ASPECT)
-    rec = GestureRecognizer(0, cfg.gestures)
-    frames = still(15, GUARD) + hook_frames("left", GUARD["left"], (-1.0, -0.5),
-                                            other={"right": GUARD["right"]}) \
-        + still(10, {"left": (-1.0, -0.5), "right": GUARD["right"]})
-    out = []
-    for k, (w, d, e) in enumerate(frames):
-        pose.update(make_pose(w, d, e), k / FPS)
-        out += [ev.gesture for ev in rec.update(pose, k / FPS, k / FPS)
-                if ev.gesture.startswith("hook")]
-    assert out == []
+    assert out == ["uppercut_right"]

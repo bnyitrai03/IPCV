@@ -110,15 +110,11 @@ class EffectsManager:
                                -p.direction * r.uniform(30, 120), r.uniform(-40, 40),
                                0.3, 0.3, r.uniform(3, 7), color, kind="spark"))
 
-    def swing_trail(self, x: float, y: float, kind: str, color, facing: int) -> None:
-        """Ribbon of glowing points left by the fist: horizontal arc for hooks,
-        vertical streak for uppercuts."""
+    def swing_trail(self, x: float, y: float, color) -> None:
+        """Vertical streak of glowing points left by the uppercut fist."""
         r = self.rng
         for _ in range(3):
-            if kind == "uppercut":
-                vx, vy = r.uniform(-20, 20), r.uniform(-260, -140)
-            else:
-                vx, vy = -facing * r.uniform(40, 110), r.uniform(-25, 25)
+            vx, vy = r.uniform(-20, 20), r.uniform(-260, -140)
             self._add(Particle(x + r.uniform(-6, 6), y + r.uniform(-6, 6), vx, vy,
                                0.28, 0.28, r.uniform(7, 12), color, kind="trail"))
 

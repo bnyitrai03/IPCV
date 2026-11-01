@@ -3,10 +3,6 @@
   "pose": {"model_file": "pose_landmarker_full.task", "num_poses": 2},
   "face": {"num_faces": 2, "run_every_n_frames": 1},
   "gestures": {
-    "hook_direction": "inward",
-    "hook_min_dx": 0.4,
-    "hook_min_elbow_deg": 20,
-    "hook_max_elbow_deg": 145,
     "uppercut_min_rise": 0.6,
     "uppercut_end_below_nose": 0.45,
     "uppercut_min_reach": 0.7,

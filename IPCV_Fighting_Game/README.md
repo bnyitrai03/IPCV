@@ -119,8 +119,7 @@ quits from registration and pauses during a fight.
 
 | Action | Movement | Notes |
 |---|---|---|
-| Hook (left / right) | elbow **bent ~90°**, swing the fist fast **sideways across in front of your body** at chin height | main attack: 8 damage; a straight-arm swing does not count |
-| Uppercut (left / right) | drive **one fist fast up and forward** to head height (a small dip first is fine) | 11 damage, big knockback, shorter range |
+| Uppercut (left / right) | drive **one fist fast up and forward** to head height (a small dip first is fine) | the attack: 11 damage, big knockback, shorter range |
 | Block | **both hands near the face** | held as long as the guard is held |
 | Special (energy ball) | **both arms raised above the head**, hold ~0.35 s | needs half an energy bar; lower arms to re-arm |
 | Move | **lean your upper body left / right** (stand anywhere) | small sway ignored; frozen briefly after an attack and while blocking |
@@ -247,23 +246,15 @@ Per player (`PlayerPose`):
 
 ### Task 4 — gestures → actions
 All thresholds are in shoulder widths (sw) and configurable (`config.py`).
-* **Attacks** (per arm, `ARMED → fire → RECOVER → ARMED`). Both attacks are
-  found in a 0.6 s trail of recent fist positions, measured from the point
-  that gives the fastest motion (the turning point of an out-then-in wind-up,
-  or the bottom of a dip), so natural boxing movements work.
-  **Hook**: inward horizontal sweep ≥ 0.5 sw towards/across the body midline
-  within 0.4 s at ≥ 2.5 sw/s, at chest-head height, with the **elbow bent
-  45–135°** (median over the sweep) according to EITHER the 3D angle from
-  MediaPipe's *estimated* world landmarks OR the 2D image angle. The 2D angle
-  is only used when neither arm segment is foreshortened (≥ 0.4 sw in the
-  image): an arm pointing at the camera looks short and its 2D angle is
-  meaningless, so straight-arm swings stay rejected.
+* **Attack** (per arm, `ARMED → fire → RECOVER → ARMED`). The uppercut is
+  found in a 0.6 s trail of recent fist positions, measured from the lowest
+  point of a dip, so natural boxing movements work.
   **Uppercut**: rise ≥ 0.6 sw from the lowest point of the last 0.4 s (so a
   dip first is fine), clearly upwards (rise ≥ 1.3 × sideways), peak fist speed
   ≥ 3.0 sw/s, ending at least at chin height with the fist ≥ 0.7 sw from the
-  shoulder (bent arm is fine); confirmed after 120 ms so that raising both
-  arms (special) does not trigger it. A guard hand at eye level does not
-  cancel it.
+  shoulder (bent arm is fine) and not far out to the side; confirmed after
+  120 ms so that raising both arms (special) does not trigger it. A guard hand
+  at eye level does not cancel it.
   After an attack the arm must come back and slow down before it re-arms
   (0.3 s cooldown): holding a pose or pulling back never fires. Straight
   punches are deliberately not an action (unreliable depth from one camera).
@@ -286,13 +277,13 @@ All thresholds are in shoulder widths (sw) and configurable (`config.py`).
   spot" control is `"move_mode": "position"` in `config.json`.
 * **Gesture AR effects on the real body** (`rendering/body_effects.py`), drawn
   in each player's webcam panel and anchored to that player's landmarks: a
-  glowing trail on the real fist plus a HOOK!/UPPERCUT! label when an attack
+  glowing trail on the real fist plus an UPPERCUT! label when an attack
   is recognised, a translucent shield in front of the forearms while
   blocking, an energy ball growing between the raised hands while charging
   the special (burst when it fires), and an arrow at the shoulders showing
   the walking direction.
 * Both players are processed independently in the same frame, so
-  simultaneous actions are supported (and simultaneous hooks trade hits).
+  simultaneous actions are supported (and simultaneous uppercuts trade hits).
 * Game side: hit/hurt boxes, startup/active/recovery frames, 150 ms input
   buffer, block damage reduction (85 %), counter hits, combo scaling,
   projectiles with clashes, KO, time-out, best of 3 rounds.
@@ -314,11 +305,11 @@ MediaPipe model download was blocked by the network):
 
 * `pytest`: full suite — game logic (hits, blocking, buffering, trades,
   specials, projectiles/clashes, KO, time-out, restart, counter hits), vision
-  logic (One Euro filter, missing-landmark hold/recovery, hooks need a bent
-  elbow, attacks fire once while the pose is held, slow reach does not fire,
+  logic (One Euro filter, missing-landmark hold/recovery, attacks fire once
+  while the pose is held, slow reach does not fire,
   identity kept through a full crossing, occlusion recovery and re-entry,
   faces never switch players, expected gesture counts, lean movement,
-  uppercut/hook variants incl. straight-arm and guard cases) and the webcam-only
+  uppercut variants incl. guard cases) and the webcam-only
   fight session (calibration gate, input adapter, pause/restart).
 * Headless runs of the webcam fight with the synthetic scenario and a
   3-minute synthetic stability run with logging.
@@ -334,10 +325,10 @@ are not results. Use the checklist below and the evaluation tools.
 ### Live test checklist (please do this first)
 1. `python scripts/verify_multipose.py` with two people → note the % of frames with 2 poses and inference times.
 2. `python main.py --debug --log` → Webcam fight. Registration should show P1/P2 labels. Press **Enter** with only P1 visible: the fight should start, and P2 should register and start controlling when they step in.
-3. One player: hooks (elbow bent) and uppercuts with each arm; hold the pose afterwards (must hit **once**); a straight-arm swing and a straight punch must do nothing; guard the face (BLOCK light); raise both arms (special); step left/right.
+3. One player: uppercuts with each arm; hold the pose afterwards (must hit **once**); a straight punch and a sideways swing must do nothing; guard the face (BLOCK light); raise both arms (special); step left/right.
 4. Two players: attack at the same time; walk past each other (crossing) and check the labels/effects in the panels stay with the right person; one player leaves the frame and returns.
 5. Turn your head, lean, move closer/further: AR effects should stay aligned. Lean left/right while standing at different spots: you should walk only while leaning (raising your guard or turning your head must not).
-6. If attacks are missed or trigger too easily, read `elbow`, `hook` and `rise` in the F1 overlay and adjust `hook_min_dx`, `hook_min_elbow_deg`/`hook_max_elbow_deg`, `uppercut_min_rise`, `uppercut_min_reach` or `attack_min_speed` in `config.json`.
+6. If attacks are missed or trigger too easily, read `rise`, `reach` and `side` in the F1 overlay and adjust `uppercut_min_rise`, `uppercut_min_reach`, `uppercut_max_side` or `attack_min_speed` in `config.json`.
 7. Play several full matches (≥ 10 min) with `--log`, then `python scripts/analyze_session.py`.
 
 ---
@@ -346,7 +337,7 @@ are not results. Use the checklist below and the evaluation tools.
 
 Run with `--log`. Each run creates `logs/session_<timestamp>/` with
 `performance.csv`, `vision_frames.csv`, `tracker_events.csv`, `gestures.csv`,
-`gesture_features.csv` (per frame: lean, hook sweep, elbow angles, uppercut rise/height/reach per arm),
+`gesture_features.csv` (per frame: lean, uppercut rise/height/reach per arm),
 `annotations.csv` and `meta.json` (config + platform).
 Then:
 
@@ -391,11 +382,8 @@ latency before that are not measurable in software and are excluded.
 
 ## 7. Known limitations
 
-* **Depth / elbow angle**: the hook's 90° elbow check uses MediaPipe's
-  *estimated* 3D landmarks; when the forearm points straight at the camera the
-  estimate is noisy, so the accepted range is wide (45–135°, 3D or 2D). Straight punches
-  at the camera were dropped as an action because one camera measures depth
-  poorly.
+* **Depth**: straight punches at the camera were dropped as an action because
+  one camera measures depth poorly.
 * **Multi-person pose** quality depends on both people being fully visible;
   strong overlap during crossings often hides one person for a moment — the
   tracker coasts through it, but very long full occlusions end in re-entry
@@ -460,8 +448,8 @@ or `"face": {"run_every_n_frames": 2}`.
 | "Could not open camera" | camera permission (macOS), close other camera apps, try `--camera 1` |
 | Only one skeleton | both people fully in frame, more light, step back; check with `verify_multipose.py` |
 | Low FPS | lite pose model, `inference_width` 480, face every 2 frames; see F1 overlay |
-| Attacks trigger by accident | raise `attack_min_speed`, `hook_min_dx` or `uppercut_min_rise` |
-| Hooks missed | lower `hook_min_dx` or `attack_min_speed`; widen `hook_min_elbow_deg`/`hook_max_elbow_deg` (see `HOOK dx/spd/elb` in F1); `hook_direction: "both"` also accepts swings away from the body (default `"inward"`) |
+| Attacks trigger by accident | raise `attack_min_speed` or `uppercut_min_rise` |
+| Uppercuts missed | lower `attack_min_speed` or `uppercut_min_peak_speed`; lower `uppercut_min_rise`/`uppercut_min_reach` (see `UPPER rise/spd/reach` in F1) |
 | Walking too sensitive / not enough | raise / lower `lean_dead_zone` (default 0.22) and `lean_full_scale` (0.45); the lean is the shoulder offset from the hips (world landmarks take over when the hips are out of view) |
 | Uppercut fires when raising the arm to the side | lower `uppercut_max_side` (default 0.6 sw beside the shoulder; `side` in F1) |
 | Attacks fire with the hand out of the picture | keep both hands in view in the guard; such hands are ignored, but a hand-like object behind you (a ball, a lamp) can confuse the pose model |

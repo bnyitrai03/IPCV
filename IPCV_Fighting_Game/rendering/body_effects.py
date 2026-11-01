@@ -3,7 +3,7 @@
 Drawn into each player's webcam panel, anchored to that player's tracked
 landmarks, so the effect sits on the correct person and follows the motion:
 
-* hook / uppercut  -> glowing trail following the real fist + action label,
+* uppercut         -> glowing trail following the real fist + action label,
 * block            -> translucent energy shield in front of the forearms,
 * special charging -> energy ball growing between the raised hands, burst on release,
 * lean (movement)  -> arrow at the shoulders showing the walking direction.
@@ -25,7 +25,7 @@ from vision.pose_tracking import L_SHOULDER, L_WRIST, R_SHOULDER, R_WRIST
 
 AA = cv2.LINE_AA
 ATTACK_SHOW_S = 0.6        # how long an attack effect stays visible
-LABELS = {"hook": "HOOK!", "uppercut": "UPPERCUT!"}
+LABELS = {"uppercut": "UPPERCUT!"}
 
 
 def _bgr(rgb: tuple[int, int, int]) -> tuple[int, int, int]:
