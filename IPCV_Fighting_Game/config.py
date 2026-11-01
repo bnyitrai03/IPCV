@@ -83,15 +83,15 @@ class TrackingConfig:
     # Gate on predicted-position distance (in shoulder widths) for active tracks.
     position_gate: float = 2.5
     # Track coasts on prediction for this long, then becomes ABSENT.
-    lost_timeout_s: float = 1.2
+    lost_timeout_s: float = 1.6
     # Max Bhattacharyya distance for re-identifying a returning player.
     reentry_appearance_threshold: float = 0.55
     # Appearance model exponential update rate (only when players are apart).
     appearance_update_rate: float = 0.03
     # Players closer than this (shoulder widths) are "overlapping" -> crossing mode.
-    overlap_distance: float = 1.2
+    overlap_distance: float = 1.6
     # During overlap, appearance weight is multiplied by this.
-    overlap_appearance_boost: float = 2.5
+    overlap_appearance_boost: float = 3.0
     # Frames with both players visible needed to register identities.
     registration_frames: int = 20
     velocity_decay: float = 0.85
@@ -127,7 +127,7 @@ class GestureConfig:
     # Special: wrists above the nose by this many shoulder widths.
     special_raise: float = 0.45
     special_hold_s: float = 0.35
-    special_cooldown_s: float = 2.5
+    special_cooldown_s: float = 4.0
     # Movement. "lean": lean the upper body left/right (shoulders vs hips), so
     # players can stand anywhere; "position": step away from the registered spot.
     move_mode: str = "lean"
