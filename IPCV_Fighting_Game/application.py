@@ -312,7 +312,7 @@ class App:
                     self.arena.pulse(0.25 * strength)
                     self.effects.text(f"-{d['damage']:.0f}", d["x"], d["y"] - 30, (255, 240, 120), 34)
                     if d["attack"].startswith("uppercut"):
-                        self.effects.text("UPPERCUT!", d["x"], d["y"] - 100, (255, 200, 60), 44, 0.9)
+                        self.effects.text("PUNCH!", d["x"], d["y"] - 100, (255, 200, 60), 44, 0.9)
                         self.effects.shake(9, 0.25)
                     if d["counter"]:
                         self.effects.text("COUNTER!", d["x"], d["y"] - 70, (255, 120, 60), 40, 1.0)
@@ -379,7 +379,7 @@ class App:
         self.effects.draw(surf, shake)
 
     def _attack_trail(self, f, renderer) -> None:
-        """Motion trail on the striking fist during an uppercut."""
+        """Motion trail on the striking fist during a forward punch."""
         a = f.attack
         if f.state != FighterState.PUNCH or a is None:
             return
@@ -390,10 +390,9 @@ class App:
         if fist is None:
             return
         color = STYLES[f.player_id].accent
-        self.effects.swing_trail(fist[0], fist[1], color)
+        self.effects.punch_trail(fist[0], fist[1], color, f.facing)
         if spec.name == "uppercut" and abs(f.state_time - spec.startup) < 0.02:
             self.effects.dust(f.x, f.ground_y, f.facing)
-            self.effects.dust(f.x, f.ground_y, -f.facing)
 
     def _control_labels(self, snap: VisionSnapshot | None) -> tuple[str, str]:
         labels = []

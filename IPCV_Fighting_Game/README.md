@@ -286,7 +286,9 @@ All thresholds are in shoulder widths (sw) and configurable (`config.py`).
   simultaneous actions are supported (and simultaneous uppercuts trade hits).
 * Game side: hit/hurt boxes, startup/active/recovery frames, 150 ms input
   buffer, block damage reduction (85 %), counter hits, combo scaling,
-  projectiles with clashes, KO, time-out, best of 3 rounds.
+  projectiles with clashes, KO, time-out, best of 3 rounds. The upward
+  uppercut gesture is performed in the arena as a lunging straight punch, so
+  it has a longer reach than a compact uppercut.
 
 ### Task 5 — integration
 Threaded capture → inference → snapshot; fixed-step 60 Hz logic; hit-stop,

@@ -48,9 +48,11 @@ class AttackSpec:
     knockback: float      # px/s initial push
 
 
-# Uppercut: the attack; big damage and knockback, short range, long recovery = punishable.
+# Uppercut: recognised from an upward fist motion but performed in-game as a
+# lunging straight punch, so it has a long reach. Big damage and knockback,
+# long recovery = punishable.
 UPPERCUT = AttackSpec("uppercut", startup=0.12, active=0.10, recovery=0.30, damage=11.0,
-                      reach=72.0, height=80.0, y_offset=180.0,
+                      reach=124.0, height=64.0, y_offset=166.0,
                       hitstun=0.48, blockstun=0.22, knockback=380.0)
 ATTACKS = {"uppercut": UPPERCUT}
 SPECIAL_CHARGE = 0.32

@@ -31,22 +31,25 @@ def _mod(base: Pose, **changes: tuple[float, float]) -> Pose:
     return p
 
 
-# Uppercut: deep crouch with the fist low -> explosive jump, fist straight above the head.
-UPPER_F_DIP = _mod(STANCE, hip=(-2, -88), chest=(6, -128), neck=(10, -156), head=(14, -178),
-                   sh_f=(16, -150), el_f=(22, -112), wr_f=(36, -104), sh_b=(-2, -152),
-                   el_b=(16, -118), wr_b=(30, -146), kn_f=(40, -42), kn_b=(-28, -42))
-# Strike: body rises and leans in, fist drives up AND forward to the opponent's chin.
-UPPER_F = _mod(STANCE, hip=(8, -122), chest=(18, -166), neck=(24, -195), head=(30, -217),
-               sh_f=(30, -188), el_f=(52, -196), wr_f=(70, -232), sh_b=(6, -188),
-               el_b=(16, -156), wr_b=(30, -180), kn_f=(32, -64), an_f=(40, -8),
-               kn_b=(-16, -64), an_b=(-32, -6))
-UPPER_B_DIP = _mod(UPPER_F_DIP, el_f=(36, -136), wr_f=(48, -160), sh_b=(-2, -152),
-                   el_b=(0, -112), wr_b=(16, -102))
-UPPER_B = _mod(UPPER_F, sh_f=(30, -184), el_f=(40, -154), wr_f=(52, -178),
-               sh_b=(22, -190), el_b=(50, -198), wr_b=(72, -234))
+# The uppercut gesture is performed in-game as a lunging straight punch: coil
+# the striking fist back, then drive it forward at shoulder height with the
+# body, giving the attack its long reach.
+PUNCH_F_DIP = _mod(STANCE, hip=(-2, -96), chest=(2, -138), neck=(6, -168), head=(10, -190),
+                   sh_f=(14, -160), el_f=(0, -138), wr_f=(-10, -152), sh_b=(-2, -164),
+                   el_b=(12, -134), wr_b=(24, -160), kn_f=(34, -46), an_f=(42, 0),
+                   kn_b=(-26, -46), an_b=(-38, 0))
+# Strike: body lunges in, striking arm fully extended at shoulder height.
+PUNCH_F = _mod(STANCE, hip=(10, -106), chest=(22, -148), neck=(28, -178), head=(34, -200),
+               sh_f=(38, -170), el_f=(78, -171), wr_f=(118, -172), sh_b=(12, -176),
+               el_b=(26, -148), wr_b=(34, -184), kn_f=(36, -62), an_f=(54, -6),
+               kn_b=(-22, -58), an_b=(-46, -4))
+PUNCH_B_DIP = _mod(PUNCH_F_DIP, el_f=(28, -136), wr_f=(38, -160), sh_b=(0, -158),
+                   el_b=(-14, -138), wr_b=(-24, -152))
+PUNCH_B = _mod(PUNCH_F, sh_f=(38, -166), el_f=(52, -138), wr_f=(58, -166),
+               sh_b=(26, -172), el_b=(66, -172), wr_b=(118, -174))
 # (pose before the strike, strike pose) per attack side.
-ATTACK_POSES = {("uppercut", "left"): (UPPER_F_DIP, UPPER_F),
-                ("uppercut", "right"): (UPPER_B_DIP, UPPER_B)}
+ATTACK_POSES = {("uppercut", "left"): (PUNCH_F_DIP, PUNCH_F),
+                ("uppercut", "right"): (PUNCH_B_DIP, PUNCH_B)}
 BLOCK = _mod(STANCE, hip=(-4, -102), chest=(-2, -146), neck=(2, -175), head=(4, -196),
              el_f=(36, -150), wr_f=(38, -204), el_b=(24, -146), wr_b=(26, -198),
              kn_f=(30, -52), kn_b=(-22, -52))
@@ -105,10 +108,10 @@ def target_pose(f: Fighter, clock: float) -> Pose:
         spec = f.attack.spec
         windup, strike = ATTACK_POSES[(spec.name, f.attack.side)]
         if t < spec.startup:
-            # Startup: into the uppercut crouch.
+            # Startup: coil back into the punch wind-up.
             return lerp_pose(STANCE, windup, ease_out(t / spec.startup))
         if t < spec.startup + spec.active:
-            # Active: snap from the wind-up into the strike in the first half.
+            # Active: snap the fist forward into the strike in the first half.
             k = ease_out((t - spec.startup) / (spec.active * 0.5))
             return lerp_pose(windup, strike, k)
         k = ease_out((t - spec.startup - spec.active) / spec.recovery)

@@ -71,6 +71,13 @@ def test_uppercut_out_of_range_misses():
     assert gs.fighters[1].health == gs.cfg.max_health
 
 
+def test_uppercut_forward_punch_has_longer_reach():
+    gs = make_state()
+    gs.fighters[0].x, gs.fighters[1].x = 500, 650
+    events = step(gs, 40, PlayerInput(uppercut_right=True))
+    assert [e for e in events if e.kind == "hit"], "the forward punch should reach farther than the old uppercut"
+
+
 def test_block_reduces_damage():
     gs = make_state()
     put_in_range(gs)
