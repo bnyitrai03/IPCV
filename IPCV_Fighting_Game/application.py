@@ -330,6 +330,7 @@ class App:
                 if d["reason"] in ("ko", "double_ko"):
                     self.banner.show("K.O.", 2.0, color=(255, 60, 50))
                     self.sound.play("ko")
+                    self.sound.play("ko_voice")
                 else:
                     self.banner.show("TIME", 1.2, color=WHITE)
                 w = d["winner"]

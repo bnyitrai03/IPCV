@@ -293,7 +293,8 @@ All thresholds are in shoulder widths (sw) and configurable (`config.py`).
 ### Task 5 — integration
 Threaded capture → inference → snapshot; fixed-step 60 Hz logic; hit-stop,
 screen shake, particles (capped), animated arena that reacts to big hits,
-round intro/KO/time/victory transitions, live FPS/latency overlay (F1) and
+round intro/KO/time/victory transitions (including a procedural announcer
+voice shouting "K.O."), live FPS/latency overlay (F1) and
 graceful degradation: missing models or camera → readable error screen;
 lost player → "TRACKING LOST" in their panel, with identity re-acquisition
 when they return.
