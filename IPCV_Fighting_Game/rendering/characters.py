@@ -31,7 +31,6 @@ class FighterStyle:
     band: Color
     accent: Color          # effects / UI colour
     outline: Color = (18, 14, 24)
-    spiky: bool = False
 
 
 BLAZE = FighterStyle("BLAZE", skin=(232, 178, 136), gi=(206, 46, 42), gi_shade=(150, 28, 32),
@@ -39,7 +38,7 @@ BLAZE = FighterStyle("BLAZE", skin=(232, 178, 136), gi=(206, 46, 42), gi_shade=(
                      hair=(34, 26, 30), band=(245, 245, 240), accent=(255, 120, 40))
 VOLT = FighterStyle("VOLT", skin=(196, 140, 104), gi=(38, 110, 210), gi_shade=(26, 70, 150),
                     pants=(34, 60, 120), belt=(250, 210, 60), glove=(235, 235, 240),
-                    hair=(250, 232, 140), band=(250, 210, 60), accent=(90, 210, 255), spiky=True)
+                    hair=(250, 232, 140), band=(250, 210, 60), accent=(90, 210, 255))
 STYLES = (BLAZE, VOLT)
 
 
@@ -192,26 +191,13 @@ class FighterRenderer:
         _capsule(surf, neck, (hx - fx * 2, hy + 10), 9, 8, s.outline)
         _capsule(surf, neck, (hx - fx * 2, hy + 10), 7, 6, self._col(_shade(s.skin, 0.85)))
         # Hair behind the head.
-        if s.spiky:
-            spikes = []
-            for k in range(7):
-                a = math.pi * (0.55 + k * 0.17)
-                r = 30 if k % 2 == 0 else 20
-                ax = -math.cos(a) * fx
-                spikes.append((hx + ax * r - fx * 4, hy - math.sin(a) * r - 4))
-            spikes = [(hx + fx * 14, hy - 4)] + spikes + [(hx - fx * 8, hy + 14)]
-            pygame.draw.polygon(surf, s.outline, spikes)
-            pygame.draw.polygon(surf, self._col(s.hair),
-                                [(x + (hx - x) * 0.1, y + (hy - y) * 0.1) for x, y in spikes])
-        else:
-            pygame.draw.circle(surf, s.outline, (int(hx - fx * 3), int(hy - 3)), 23)
-            pygame.draw.circle(surf, self._col(s.hair), (int(hx - fx * 3), int(hy - 3)), 21)
+        pygame.draw.circle(surf, s.outline, (int(hx - fx * 3), int(hy - 3)), 23)
+        pygame.draw.circle(surf, self._col(s.hair), (int(hx - fx * 3), int(hy - 3)), 21)
         # Face.
         pygame.draw.circle(surf, s.outline, (int(hx), int(hy)), 19)
         pygame.draw.circle(surf, self._col(s.skin), (int(hx), int(hy)), 17)
-        if not s.spiky:
-            # Short hair cap on top.
-            pygame.draw.arc(surf, s.hair, pygame.Rect(hx - 18, hy - 20, 36, 30), 0.3, 2.85, 8)
+        # Short hair cap on top.
+        pygame.draw.arc(surf, s.hair, pygame.Rect(hx - 18, hy - 20, 36, 30), 0.3, 2.85, 8)
         # Jaw shading.
         pygame.draw.arc(surf, _shade(s.skin, 0.8), pygame.Rect(hx - 16, hy - 14, 32, 30),
                         math.pi * 1.1, math.pi * 1.9, 3)

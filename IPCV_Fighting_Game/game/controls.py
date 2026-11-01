@@ -14,9 +14,7 @@ class PlayerInput:
 
     move: float = 0.0              # -1 (left) .. +1 (right), screen space
     block: bool = False            # held action
-    hook_left: bool = False        # one-shot events: bent-arm swing across the body
-    hook_right: bool = False
-    uppercut_left: bool = False    # rising punch, fist ends above the head
+    uppercut_left: bool = False    # one-shot events: rising punch, fist ends above the head
     uppercut_right: bool = False
     special: bool = False
     # perf_counter() timestamps of the camera frames that produced each
@@ -25,5 +23,5 @@ class PlayerInput:
 
 
 # Order = priority when several are requested in the same tick.
-ATTACK_ACTIONS = ("uppercut_left", "uppercut_right", "hook_left", "hook_right")
+ATTACK_ACTIONS = ("uppercut_left", "uppercut_right")
 ONE_SHOT_ACTIONS = ATTACK_ACTIONS + ("special",)

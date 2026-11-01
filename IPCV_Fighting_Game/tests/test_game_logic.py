@@ -3,7 +3,7 @@ from config import GameConfig
 from game.collision import Box, separate_pushboxes
 from game.combat import Projectile, resolve_projectiles
 from game.controls import PlayerInput
-from game.fighter import HOOK, FighterState
+from game.fighter import UPPERCUT, FighterState
 from game.game_state import ROUND_INTRO_S, GameState, Phase
 
 DT = 1 / 60
@@ -54,52 +54,59 @@ def test_walk_moves_fighter():
     assert gs.fighters[0].state == FighterState.WALK
 
 
-def test_hook_in_range_hits_once():
+def test_uppercut_in_range_hits_once():
     gs = make_state()
     put_in_range(gs)
-    events = step(gs, 40, PlayerInput(hook_right=True))
+    events = step(gs, 40, PlayerInput(uppercut_right=True))
     hits = [e for e in events if e.kind == "hit"]
-    assert len(hits) == 1, "a single hook must register exactly one hit"
-    assert gs.fighters[1].health == gs.cfg.max_health - HOOK.damage
+    assert len(hits) == 1, "a single uppercut must register exactly one hit"
+    assert gs.fighters[1].health == gs.cfg.max_health - UPPERCUT.damage
 
 
-def test_hook_out_of_range_misses():
+def test_uppercut_out_of_range_misses():
     gs = make_state()
     gs.fighters[0].x, gs.fighters[1].x = 300, 900
-    events = step(gs, 40, PlayerInput(hook_left=True))
+    events = step(gs, 40, PlayerInput(uppercut_left=True))
     assert not [e for e in events if e.kind == "hit"]
     assert gs.fighters[1].health == gs.cfg.max_health
+
+
+def test_uppercut_forward_punch_has_longer_reach():
+    gs = make_state()
+    gs.fighters[0].x, gs.fighters[1].x = 500, 650
+    events = step(gs, 40, PlayerInput(uppercut_right=True))
+    assert [e for e in events if e.kind == "hit"], "the forward punch should reach farther than the old uppercut"
 
 
 def test_block_reduces_damage():
     gs = make_state()
     put_in_range(gs)
-    events = step(gs, 40, PlayerInput(hook_right=True), PlayerInput(block=True))
+    events = step(gs, 40, PlayerInput(uppercut_right=True), PlayerInput(block=True))
     blocks = [e for e in events if e.kind == "block"]
     assert len(blocks) == 1
-    expected = gs.cfg.max_health - HOOK.damage * gs.cfg.block_damage_factor
+    expected = gs.cfg.max_health - UPPERCUT.damage * gs.cfg.block_damage_factor
     assert abs(gs.fighters[1].health - expected) < 1e-6
 
 
 def test_cannot_punch_during_recovery_but_buffer_works():
     gs = make_state()
     put_in_range(gs)
-    gs.update(DT, (PlayerInput(hook_right=True), PlayerInput()))
+    gs.update(DT, (PlayerInput(uppercut_right=True), PlayerInput()))
     assert gs.fighters[0].state == FighterState.PUNCH
     # Second press during the punch is buffered and executes afterwards (within buffer window).
-    total = HOOK.startup + HOOK.active + HOOK.recovery
+    total = UPPERCUT.startup + UPPERCUT.active + UPPERCUT.recovery
     n_before = int((total - 0.05) / DT)
     step(gs, n_before)
-    gs.update(DT, (PlayerInput(hook_left=True), PlayerInput()))
+    gs.update(DT, (PlayerInput(uppercut_left=True), PlayerInput()))
     step(gs, 6)
     f0 = gs.fighters[0]
-    assert f0.state == FighterState.PUNCH and f0.attack and f0.attack.side == "left" and f0.attack.spec.name == "hook"
+    assert f0.state == FighterState.PUNCH and f0.attack and f0.attack.side == "left" and f0.attack.spec.name == "uppercut"
 
 
-def test_simultaneous_hooks_trade():
+def test_simultaneous_uppercuts_trade():
     gs = make_state()
     put_in_range(gs)
-    events = step(gs, 40, PlayerInput(hook_right=True), PlayerInput(hook_left=True))
+    events = step(gs, 40, PlayerInput(uppercut_right=True), PlayerInput(uppercut_left=True))
     hits = [e for e in events if e.kind == "hit"]
     assert {e.data["attacker"] for e in hits} == {0, 1}
 
@@ -132,7 +139,7 @@ def test_ko_ends_round_and_match():
     gs = make_state(rounds_to_win=1)
     put_in_range(gs)
     gs.fighters[1].health = 1.0
-    events = step(gs, 40, PlayerInput(hook_right=True))
+    events = step(gs, 40, PlayerInput(uppercut_right=True))
     assert any(e.kind == "round_over" for e in events)
     assert gs.fighters[1].state == FighterState.KO
     assert gs.match_winner == 0
@@ -153,9 +160,9 @@ def test_counter_hit_and_combo_scaling():
     put_in_range(gs)
     f0, f1 = gs.fighters
     # Defender starts a punch on the same tick; attacker's earlier punch lands in their startup.
-    gs.update(DT, (PlayerInput(hook_right=True), PlayerInput()))
-    n = int((HOOK.startup - 0.01) / DT)
+    gs.update(DT, (PlayerInput(uppercut_right=True), PlayerInput()))
+    n = int((UPPERCUT.startup - 0.01) / DT)
     step(gs, n)
-    events = step(gs, 30, None, PlayerInput(hook_left=True))
+    events = step(gs, 30, None, PlayerInput(uppercut_left=True))
     first = [e for e in events if e.kind == "hit" and e.data["attacker"] == 0]
     assert first and first[0].data["counter"]

@@ -5,7 +5,7 @@ regardless of rendering frame rate. Pure Python, no pygame dependency.
 
 States::
 
-    IDLE/WALK --hook/uppercut--> PUNCH (startup -> active -> recovery) --> IDLE
+    IDLE/WALK --uppercut--> PUNCH (startup -> active -> recovery) --> IDLE
     IDLE/WALK --block held--> BLOCK --released--> IDLE
     IDLE/WALK --special (energy)--> SPECIAL (charge -> release -> recovery)
     any --hit--> HITSTUN --> IDLE          any --blocked hit--> BLOCKSTUN
@@ -48,15 +48,13 @@ class AttackSpec:
     knockback: float      # px/s initial push
 
 
-# Hook: the fast, basic attack.
-HOOK = AttackSpec("hook", startup=0.09, active=0.09, recovery=0.18, damage=8.0,
-                  reach=85.0, height=50.0, y_offset=165.0,
-                  hitstun=0.34, blockstun=0.18, knockback=300.0)
-# Uppercut: slowest and shortest, biggest damage and knockback; long recovery = punishable.
+# Uppercut: recognised from an upward fist motion but performed in-game as a
+# lunging straight punch, so it has a long reach. Big damage and knockback,
+# long recovery = punishable.
 UPPERCUT = AttackSpec("uppercut", startup=0.12, active=0.10, recovery=0.30, damage=11.0,
-                      reach=72.0, height=80.0, y_offset=180.0,
+                      reach=124.0, height=64.0, y_offset=166.0,
                       hitstun=0.48, blockstun=0.22, knockback=380.0)
-ATTACKS = {"hook": HOOK, "uppercut": UPPERCUT}
+ATTACKS = {"uppercut": UPPERCUT}
 SPECIAL_CHARGE = 0.32
 SPECIAL_RECOVERY = 0.38
 

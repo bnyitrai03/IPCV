@@ -14,7 +14,7 @@ import time
 import pygame
 
 from config import Config
-from evaluation.gesture_metrics import GestureLogger
+from evaluation.gesture_metrics import GestureFeatureLogger, GestureLogger
 from evaluation.performance import PerformanceMonitor
 from evaluation.session import Session
 from evaluation.tracking_metrics import TrackingLogger
@@ -101,6 +101,7 @@ class App:
         if self.eval_session and self.vision and self.tracking_logger is None:
             self.tracking_logger = TrackingLogger(self.eval_session)
             self.vision.frame_listeners.append(self.tracking_logger.on_frame)
+            self.vision.frame_listeners.append(GestureFeatureLogger(self.eval_session).on_frame)
 
     def _ensure_vision(self) -> bool:
         if self.vision is not None:
@@ -214,7 +215,7 @@ class App:
         elif key == pygame.K_F2:
             for p in self.panels:
                 p.show_pose = not p.show_pose
-        elif key in (pygame.K_F5, pygame.K_F6, pygame.K_F7, pygame.K_F8):
+        elif key in (pygame.K_F5, pygame.K_F6, pygame.K_F7, pygame.K_F8, pygame.K_F9, pygame.K_F10):
             self._annotate(key)
 
         phase = self.session.phase
@@ -260,7 +261,8 @@ class App:
             label = "stationary_end" if self.tracking_logger.stationary else "stationary_start"
         else:
             label = {pygame.K_F6: "identity_switch_observed", pygame.K_F7: "crossing_ok",
-                     pygame.K_F8: "crossing_failed"}[key]
+                     pygame.K_F8: "crossing_failed", pygame.K_F9: "missed_attack",
+                     pygame.K_F10: "false_attack"}[key]
         self.tracking_logger.annotate(now, pygame.key.name(key), label)
         self.banner.show(label.replace("_", " ").upper(), 0.7, color=GOLD)
 
@@ -289,7 +291,7 @@ class App:
                 self.sound.play("bell")
             elif e.kind == "fight":
                 self.banner.show("FIGHT!", 0.9, color=(255, 90, 60))
-            elif e.kind == "action" and d["action"].split("_")[0] in ("hook", "uppercut"):
+            elif e.kind == "action" and d["action"].startswith("uppercut"):
                 self.sound.play("whoosh")
             elif e.kind == "action" and d["action"] == "special_denied":
                 f = self.session.state.fighters[d["player"]]
@@ -301,7 +303,7 @@ class App:
                 atk = d["attacker"]
                 blocked = e.kind == "block"
                 color = STYLES[atk].accent
-                strength = {"special": 1.6, "uppercut": 1.4, "hook": 1.15}.get(
+                strength = {"special": 1.6, "uppercut": 1.4}.get(
                     d["attack"].split("_")[0], 1.0)
                 self.effects.impact(d["x"], d["y"], color, strength, blocked)
                 self.sound.play("block" if blocked else "hit")
@@ -310,10 +312,8 @@ class App:
                     self.arena.pulse(0.25 * strength)
                     self.effects.text(f"-{d['damage']:.0f}", d["x"], d["y"] - 30, (255, 240, 120), 34)
                     if d["attack"].startswith("uppercut"):
-                        self.effects.text("UPPERCUT!", d["x"], d["y"] - 100, (255, 200, 60), 44, 0.9)
+                        self.effects.text("PUNCH!", d["x"], d["y"] - 100, (255, 200, 60), 44, 0.9)
                         self.effects.shake(9, 0.25)
-                    elif d["attack"].startswith("hook"):
-                        self.effects.text("HOOK!", d["x"], d["y"] - 100, (255, 230, 120), 38, 0.7)
                     if d["counter"]:
                         self.effects.text("COUNTER!", d["x"], d["y"] - 70, (255, 120, 60), 40, 1.0)
                     if d["combo"] >= 2:
@@ -330,6 +330,7 @@ class App:
                 if d["reason"] in ("ko", "double_ko"):
                     self.banner.show("K.O.", 2.0, color=(255, 60, 50))
                     self.sound.play("ko")
+                    self.sound.play("ko_voice")
                 else:
                     self.banner.show("TIME", 1.2, color=WHITE)
                 w = d["winner"]
@@ -356,7 +357,7 @@ class App:
             if self.session.phase == FightPhase.PAUSED:
                 self._render_pause()
         if self.debug:
-            r = pygame.Rect(self.W - 520, 120, 500, 430)
+            r = pygame.Rect(self.W - 600, 120, 580, 430)
             lines = self.perf.overlay_lines()
             if self.vision and snap:
                 lines.append(f"source {snap.source}  poses {snap.num_poses}  faces {snap.num_faces}"
@@ -379,7 +380,7 @@ class App:
         self.effects.draw(surf, shake)
 
     def _attack_trail(self, f, renderer) -> None:
-        """Motion trail on the striking fist so hook and uppercut read differently."""
+        """Motion trail on the striking fist during a forward punch."""
         a = f.attack
         if f.state != FighterState.PUNCH or a is None:
             return
@@ -390,10 +391,9 @@ class App:
         if fist is None:
             return
         color = STYLES[f.player_id].accent
-        self.effects.swing_trail(fist[0], fist[1], spec.name, color, f.facing)
+        self.effects.punch_trail(fist[0], fist[1], color, f.facing)
         if spec.name == "uppercut" and abs(f.state_time - spec.startup) < 0.02:
             self.effects.dust(f.x, f.ground_y, f.facing)
-            self.effects.dust(f.x, f.ground_y, -f.facing)
 
     def _control_labels(self, snap: VisionSnapshot | None) -> tuple[str, str]:
         labels = []
@@ -428,11 +428,10 @@ class App:
             panel.render(self.screen, snap, status, self.clock_t, label)
         cx = self.W // 2
         y = top + 26
-        hints = ["HOOK: elbow bent 90°, swing fist across your body",
-                 "UPPERCUT: one fist up and forward to head height",
+        hints = ["UPPERCUT: one fist up and forward to head height",
                  "BLOCK: both hands to face",
                  "SPECIAL: both arms up & hold",
-                 "MOVE: step or lean left / right"]
+                 "MOVE: lean your upper body left / right"]
         for h in hints:
             text(self.screen, h, 24, (cx, y), (215, 205, 230), outline=0)
             y += 26
@@ -466,7 +465,7 @@ class App:
                      (self.W // 2, y), (120, 240, 140))
             else:
                 n = snap.num_poses if snap else 0
-                hint = ("Player 1 stands on the LEFT, Player 2 on the RIGHT. Face the camera,"
+                hint = ("P1 on the LEFT, P2 on the RIGHT. Stand upright facing the camera,"
                         " upper body and hips visible, arms relaxed.")
                 text(self.screen, hint, 26, (self.W // 2, y), WHITE)
                 col = GOLD if n < 2 else (120, 240, 140)
