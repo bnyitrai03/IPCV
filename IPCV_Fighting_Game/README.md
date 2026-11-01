@@ -271,17 +271,19 @@ All thresholds are in shoulder widths (sw) and configurable (`config.py`).
   released above 1.05 sw (hysteresis).
 * **Special**: both wrists 0.45 sw above the nose held 0.35 s; re-arms only
   after both arms drop below the shoulders; 2.5 s cooldown; costs energy.
-* **Move (lean)**: sideways lean of the upper body = tilt of the shoulder line
-  plus the head's sideways offset from the shoulder midpoint, in sw (no hips
-  needed: they are often out of the picture close to a webcam), relative to the
-  posture measured upright at registration. Median over 5 frames, dead zone
-  0.22 with hysteresis (stops below 0.15), full speed at 0.45, EMA smoothed;
-  frozen while a fist moves fast and for 0.35 s after an attack (a punch twists
-  the torso) and while blocking. Tuned on a recorded session: leans gave
-  0.35-0.52, standing and punching stayed below about 0.2. Because it does not depend on
-  where you stand, both players can stand side by side anywhere in the
-  picture. The old "step away from your spot" control is `"move_mode":
-  "position"` in `config.json`.
+* **Move (lean)**: sideways lean of the upper body = sideways offset of the
+  shoulder midpoint from the hip midpoint, in sw, relative to the posture
+  measured upright at registration. The hips are the stable reference, so a
+  raised guard hand (which lifts one shoulder) or a turned head (which moves
+  the nose) cannot start walking. If the hips are out of the picture, the 3D
+  world landmarks are used (metres, origin between the hips); only when neither
+  is available does the shoulder-line tilt have to do. Median over 7 frames
+  (one jittery frame must not start walking), dead zone 0.22 with hysteresis
+  (stops below 0.15), full speed at 0.45, EMA smoothed; frozen while a fist
+  moves fast and for 0.35 s after an attack (a punch twists the torso) and while
+  blocking. Because it does not depend on where you stand, both players can
+  stand side by side anywhere in the picture. The old "step away from your
+  spot" control is `"move_mode": "position"` in `config.json`.
 * **Gesture AR effects on the real body** (`rendering/body_effects.py`), drawn
   in each player's webcam panel and anchored to that player's landmarks: a
   glowing trail on the real fist plus a HOOK!/UPPERCUT! label when an attack
@@ -334,7 +336,7 @@ are not results. Use the checklist below and the evaluation tools.
 2. `python main.py --debug --log` → Webcam fight. Registration should show P1/P2 labels. Press **Enter** with only P1 visible: the fight should start, and P2 should register and start controlling when they step in.
 3. One player: hooks (elbow bent) and uppercuts with each arm; hold the pose afterwards (must hit **once**); a straight-arm swing and a straight punch must do nothing; guard the face (BLOCK light); raise both arms (special); step left/right.
 4. Two players: attack at the same time; walk past each other (crossing) and check the labels/effects in the panels stay with the right person; one player leaves the frame and returns.
-5. Turn your head, lean, move closer/further: AR effects should stay aligned. Lean left/right while standing at different spots: you should walk only while leaning.
+5. Turn your head, lean, move closer/further: AR effects should stay aligned. Lean left/right while standing at different spots: you should walk only while leaning (raising your guard or turning your head must not).
 6. If attacks are missed or trigger too easily, read `elbow`, `hook` and `rise` in the F1 overlay and adjust `hook_min_dx`, `hook_min_elbow_deg`/`hook_max_elbow_deg`, `uppercut_min_rise`, `uppercut_min_reach` or `attack_min_speed` in `config.json`.
 7. Play several full matches (≥ 10 min) with `--log`, then `python scripts/analyze_session.py`.
 
@@ -460,7 +462,7 @@ or `"face": {"run_every_n_frames": 2}`.
 | Low FPS | lite pose model, `inference_width` 480, face every 2 frames; see F1 overlay |
 | Attacks trigger by accident | raise `attack_min_speed`, `hook_min_dx` or `uppercut_min_rise` |
 | Hooks missed | lower `hook_min_dx` or `attack_min_speed`; widen `hook_min_elbow_deg`/`hook_max_elbow_deg` (see `HOOK dx/spd/elb` in F1); `hook_direction: "both"` also accepts swings away from the body (default `"inward"`) |
-| Walking too sensitive / not enough | raise / lower `lean_dead_zone` (default 0.22) and `lean_full_scale` (0.45); the lean is the shoulder tilt + head offset, so the hips do not need to be visible |
+| Walking too sensitive / not enough | raise / lower `lean_dead_zone` (default 0.22) and `lean_full_scale` (0.45); the lean is the shoulder offset from the hips (world landmarks take over when the hips are out of view) |
 | Uppercut fires when raising the arm to the side | lower `uppercut_max_side` (default 0.6 sw beside the shoulder; `side` in F1) |
 | Attacks fire with the hand out of the picture | keep both hands in view in the guard; such hands are ignored, but a hand-like object behind you (a ball, a lamp) can confuse the pose model |
 | Players swapped after registration | press R in the registration screen; wear different colours |

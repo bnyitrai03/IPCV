@@ -144,7 +144,7 @@ class GestureConfig:
     # Movement. "lean": lean the upper body left/right (shoulders vs hips), so
     # players can stand anywhere; "position": step away from the registered spot.
     move_mode: str = "lean"
-    lean_dead_zone: float = 0.22          # shoulder tilt + head offset (sw) that is ignored
+    lean_dead_zone: float = 0.22          # sideways shoulder offset from the hips (sw) ignored
     lean_release_ratio: float = 0.7       # keep walking until the lean drops below dead*this
     lean_full_scale: float = 0.45         # sw for full walking speed
     move_freeze_after_attack_s: float = 0.35   # torso twist of a punch is not a lean

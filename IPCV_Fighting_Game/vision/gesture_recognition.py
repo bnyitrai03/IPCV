@@ -55,11 +55,15 @@ Special — both wrists above the head held for ``special_hold_s``; re-arms
 only after both arms are lowered below the shoulders, plus a cooldown.
 
 Movement — leaning the upper body left/right (``move_mode="lean"``): the
-tilt of the shoulder line plus the head's sideways offset, in sw, minus the lean measured
-while standing upright at registration. Dead zone + linear ramp + EMA
-smoothing; frozen briefly after an attack (a punch twists the torso) and while
-blocking. Players can therefore stand anywhere in the picture. The previous
-"step away from your spot" behaviour is ``move_mode="position"``.
+sideways offset of the shoulder midpoint from the hip midpoint, in sw, minus
+the lean measured while standing upright at registration. A raised guard hand
+or a turned head cannot fake it (the hips and the 3D hip origin stay put; only
+the torso moving sideways counts). When the hips are out of the picture, the
+world landmarks are used (3D, origin between the hips); the shoulder-line tilt
+is only the last resort. Dead zone + linear ramp + EMA smoothing; frozen
+briefly after an attack (a punch twists the torso) and while blocking. Players
+can therefore stand anywhere in the picture. The previous "step away from your
+spot" behaviour is ``move_mode="position"``.
 """
 from __future__ import annotations
 
@@ -138,7 +142,7 @@ class GestureRecognizer:
         self.neutral_lean = 0.0
         self.move = 0.0
         self.move_offset = 0.0     # lean (or step) relative to neutral, sw
-        self._lean_hist: deque[float] = deque(maxlen=5)
+        self._lean_hist: deque[float] = deque(maxlen=7)
         self._walking = False      # hysteresis: start at the dead zone, stop a bit below it
         self.signals: dict[str, float] = {}
         self._sw_world_hist: deque[float] = deque(maxlen=15)
@@ -158,22 +162,29 @@ class GestureRecognizer:
     def _raw_lean(self, pose: PlayerPose) -> float | None:
         """Sideways lean of the upper body (+ = towards image right), in sw.
 
-        = tilt of the shoulder line (the shoulder on the leaning side drops)
-        + sideways offset of the head from the shoulder midpoint.
-        Both only use the shoulders and the head, so the measure does not
-        depend on where the player stands and works when the hips are out of
-        view (players close to the camera: the usual webcam setup). Using the
-        hips was unreliable: they flicker in and out at the image border."""
+        = sideways offset of the shoulder midpoint from the hip midpoint.
+        The hip line is the stable reference: raising a hand to the guard lifts
+        that shoulder and turning the head moves the nose, but neither moves
+        the hips, so the old shoulder-tilt + head-offset measure walked when a
+        player was merely guarding or looking sideways. If the hips are out of
+        the picture, the world landmarks are used: they are in metres with the
+        origin between the hips, so the shoulder midpoint's x is the same lean
+        without needing the hips in view. The shoulder-line tilt is the last
+        resort when neither the hips nor the world landmarks are available."""
         sw = pose.shoulder_width
         ls, rs = pose.point(L_SHOULDER), pose.point(R_SHOULDER)
         if ls is None or rs is None:
             return None
+        lh, rh = pose.point(L_HIP), pose.point(R_HIP)
+        if lh is not None and rh is not None:
+            return float((ls[0] + rs[0] - lh[0] - rh[0]) / (2 * sw))
+        wls, wrs = pose.world_point(L_SHOULDER), pose.world_point(R_SHOULDER)
+        if wls is not None and wrs is not None:
+            sw_world = self._world_sw(pose)
+            if sw_world is not None:
+                return float((wls[0] + wrs[0]) / (2 * sw_world))
         a, b = (ls, rs) if ls[0] <= rs[0] else (rs, ls)          # image-left, image-right
-        tilt = float((b[1] - a[1]) / sw)                          # > 0: right shoulder lower
-        nose = pose.point(NOSE)
-        if nose is None:
-            return tilt * 1.6
-        return tilt + float((nose[0] - (a[0] + b[0]) / 2) / sw)
+        return float((b[1] - a[1]) / sw)                          # > 0: right shoulder lower
 
     def reset(self) -> None:
         for arm in self.arms.values():
@@ -340,7 +351,8 @@ class GestureRecognizer:
             lean = self._raw_lean(pose)
             if lean is not None:
                 # Median of the last frames: a single jittery frame or the quick
-                # torso twist of a punch does not start walking.
+                # torso twist of a punch does not start walking. One frame of
+                # jitter smears over a few filtered frames, hence a window of 7.
                 self._lean_hist.append(lean - self.neutral_lean)
                 offset = float(np.median(self._lean_hist))
                 dead, full = cfg.lean_dead_zone, cfg.lean_full_scale

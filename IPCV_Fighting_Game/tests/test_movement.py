@@ -8,14 +8,15 @@ from vision.pose_tracking import (L_ELBOW, L_HIP, L_SHOULDER, L_WRIST, NOSE, R_E
 
 ASPECT = 16 / 9
 SW = 0.13
+SW_M = 0.38
 FPS = 30.0
 
 
 def body(x=0.4, lean=0.0):
     """Upright person centred at image x. ``lean`` (sw, + = towards image right)
-    bends the upper body sideways: the shoulder on that side drops (shoulder line
-    tilts) and the head moves a little that way. The hips are NOT used (often out
-    of the picture when standing close to a webcam)."""
+    bends the upper body sideways around the hips: the shoulders move that way
+    off the hip line (and tilt a little), the head goes with them. The hips stay
+    put. Raising a guard arm only lifts one shoulder; it must not count as a lean."""
     img = np.zeros((33, 4))
     img[:, 3] = 0.95
     sy = 0.4
@@ -24,11 +25,12 @@ def body(x=0.4, lean=0.0):
         img[i, 0], img[i, 1] = px, py * ASPECT
 
     tilt = 0.8 * lean * SW                       # right shoulder lower when leaning right
+    shift = lean * SW                            # the upper body moves off the hips
     put(L_HIP, x - 0.33 * SW, sy + 1.55 * SW)
     put(R_HIP, x + 0.33 * SW, sy + 1.55 * SW)
-    put(L_SHOULDER, x - 0.5 * SW, sy - tilt / 2)
-    put(R_SHOULDER, x + 0.5 * SW, sy + tilt / 2)
-    put(NOSE, x + 0.2 * lean * SW, sy - 0.62 * SW)
+    put(L_SHOULDER, x - 0.5 * SW + shift, sy - tilt / 2)
+    put(R_SHOULDER, x + 0.5 * SW + shift, sy + tilt / 2)
+    put(NOSE, x + shift, sy - 0.62 * SW)
     for s_i, e_i, w_i, side in ((L_SHOULDER, L_ELBOW, L_WRIST, -1), (R_SHOULDER, R_ELBOW, R_WRIST, 1)):
         sx, syy = img[s_i, 0], img[s_i, 1] / ASPECT
         put(e_i, sx + side * 0.1 * SW, syy + 0.75 * SW)
@@ -107,3 +109,33 @@ def test_one_jittery_frame_does_not_start_walking():
         frames += [body(lean=0.9)] + [body()] * 6
     moves = run(frames)
     assert max(abs(m) for m in moves) == 0.0
+
+
+def test_guard_shoulder_and_turned_head_do_not_walk():
+    # A raised guard arm lifts one shoulder and a turned head moves the nose.
+    # Neither moves the hips, so the torso is still upright: no walking.
+    frames = []
+    for _ in range(40):
+        det = body()
+        det.image[L_SHOULDER, 1] -= 0.3 * SW * ASPECT
+        det.image[NOSE, 0] += 0.3 * SW
+        frames.append(det)
+    assert max(abs(m) for m in run(frames)) == 0.0
+
+
+def _world_shoulders(shift_sw=0.0):
+    world = np.zeros((33, 3))
+    world[L_SHOULDER] = ((-0.5 + shift_sw) * SW_M, -1.5 * SW_M, 0.0)
+    world[R_SHOULDER] = ((0.5 + shift_sw) * SW_M, -1.5 * SW_M, 0.0)
+    return world
+
+
+def test_hips_out_of_view_uses_world_lean_not_shoulder_tilt():
+    def frame(shift_sw):
+        det = body()
+        det.image[[L_HIP, R_HIP], 3] = 0.1                 # hips out of view
+        det.image[L_SHOULDER, 1] -= 0.4 * SW * ASPECT      # guard tilts the 2D line
+        det.world = _world_shoulders(shift_sw)
+        return det
+    assert max(abs(m) for m in run([frame(0.0)] * 40)) == 0.0   # upright in 3D
+    assert run([frame(0.6)] * 40)[-1] > 0.8                     # leaning in 3D
