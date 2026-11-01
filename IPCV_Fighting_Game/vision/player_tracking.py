@@ -207,7 +207,6 @@ class PlayerTracker:
             t.state = TrackState.UNREGISTERED
             t.hist = None
             t.gestures.reset()
-            t.gestures.neutral_x = None
         self._registration_count = 0
 
     @property

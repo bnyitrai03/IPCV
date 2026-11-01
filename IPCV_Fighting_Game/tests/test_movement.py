@@ -89,13 +89,6 @@ def test_crooked_neutral_posture_is_calibrated_away():
     assert moves[-1] == 0.0
 
 
-def test_position_mode_still_available():
-    cfg = Config()
-    cfg.gestures.move_mode = "position"
-    moves = run([body(x=0.4)] * 10 + [body(x=0.6)] * 30, cfg)
-    assert moves[-1] > 0.8
-
-
 def test_moderate_sway_is_ignored_but_a_clear_lean_walks():
     moves = run([body()] * 10 + [body(lean=0.15)] * 30)
     assert max(abs(m) for m in moves) == 0.0

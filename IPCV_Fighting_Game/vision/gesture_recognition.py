@@ -41,16 +41,15 @@ out of the guard ends the block (attacks take priority, as in the game logic).
 Special — both wrists above the head held for ``special_hold_s``; re-arms
 only after both arms are lowered below the shoulders, plus a cooldown.
 
-Movement — leaning the upper body left/right (``move_mode="lean"``): the
-sideways offset of the shoulder midpoint from the hip midpoint, in sw, minus
-the lean measured while standing upright at registration. A raised guard hand
-or a turned head cannot fake it (the hips and the 3D hip origin stay put; only
-the torso moving sideways counts). When the hips are out of the picture, the
-world landmarks are used (3D, origin between the hips); the shoulder-line tilt
-is only the last resort. Dead zone + linear ramp + EMA smoothing; frozen
-briefly after an attack (a punch twists the torso) and while blocking. Players
-can therefore stand anywhere in the picture. The previous "step away from your
-spot" behaviour is ``move_mode="position"``.
+Movement — leaning the upper body left/right: the sideways offset of the
+shoulder midpoint from the hip midpoint, in sw, minus the lean measured while
+standing upright at registration. A raised guard hand or a turned head cannot
+fake it (the hips and the 3D hip origin stay put; only the torso moving
+sideways counts). When the hips are out of the picture, the world landmarks
+are used (3D, origin between the hips); the shoulder-line tilt is only the
+last resort. Dead zone + linear ramp + EMA smoothing; frozen briefly after an
+attack (a punch twists the torso) and while blocking. Players can therefore
+stand anywhere in the picture.
 """
 from __future__ import annotations
 
@@ -116,10 +115,9 @@ class GestureRecognizer:
         self._special_armed = True
         self._special_last = -math.inf
         self.special_progress = 0.0
-        self.neutral_x: float | None = None
         self.neutral_lean = 0.0
         self.move = 0.0
-        self.move_offset = 0.0     # lean (or step) relative to neutral, sw
+        self.move_offset = 0.0     # lean relative to neutral, sw
         self._lean_hist: deque[float] = deque(maxlen=7)
         self._walking = False      # hysteresis: start at the dead zone, stop a bit below it
         self.signals: dict[str, float] = {}
@@ -127,11 +125,10 @@ class GestureRecognizer:
 
     # ------------------------------------------------------------ calibration
     def calibrate(self, pose: PlayerPose) -> bool:
-        """Store the neutral standing position. Returns False if not possible."""
+        """Store the neutral standing posture. Returns False if not possible."""
         ls, rs = pose.point(L_SHOULDER), pose.point(R_SHOULDER)
         if ls is None or rs is None:
             return False
-        self.neutral_x = float((ls[0] + rs[0]) / 2)
         lean = self._raw_lean(pose)
         # Standing upright at registration defines "no lean" (people stand a bit crooked).
         self.neutral_lean = lean if lean is not None and abs(lean) < 0.3 else 0.0
@@ -304,18 +301,14 @@ class GestureRecognizer:
 
         # ---------------- movement ----------------
         target = 0.0
-        offset, dead, full = None, cfg.move_dead_zone, cfg.move_full_scale
-        if cfg.move_mode == "lean":
-            lean = self._raw_lean(pose)
-            if lean is not None:
-                # Median of the last frames: a single jittery frame or the quick
-                # torso twist of a punch does not start walking. One frame of
-                # jitter smears over a few filtered frames, hence a window of 7.
-                self._lean_hist.append(lean - self.neutral_lean)
-                offset = float(np.median(self._lean_hist))
-                dead, full = cfg.lean_dead_zone, cfg.lean_full_scale
-        elif ls is not None and rs is not None and self.neutral_x is not None:
-            offset = ((ls[0] + rs[0]) / 2 - self.neutral_x) / sw
+        offset, dead, full = None, cfg.lean_dead_zone, cfg.lean_full_scale
+        lean = self._raw_lean(pose)
+        if lean is not None:
+            # Median of the last frames: a single jittery frame or the quick
+            # torso twist of a punch does not start walking. One frame of
+            # jitter smears over a few filtered frames, hence a window of 7.
+            self._lean_hist.append(lean - self.neutral_lean)
+            offset = float(np.median(self._lean_hist))
         # Freeze while punching: the torso twists during the swing (before the
         # attack fires) and for a moment after it.
         punching = any(now - arm.last_fire < cfg.move_freeze_after_attack_s

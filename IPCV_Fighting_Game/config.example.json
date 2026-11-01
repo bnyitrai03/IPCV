@@ -10,7 +10,6 @@
     "attack_min_speed": 2.2,
     "block_enter_dist": 0.85,
     "special_hold_s": 0.35,
-    "move_mode": "lean",
     "lean_dead_zone": 0.22,
     "lean_full_scale": 0.45
   },

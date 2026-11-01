@@ -56,7 +56,6 @@ class CameraThread:
         self._running = False
         self._thread: threading.Thread | None = None
         self.frames_read = 0
-        self.read_failures = 0
         self.actual_size: tuple[int, int] = (0, 0)
         self.actual_fps = 0.0
 
@@ -101,7 +100,6 @@ class CameraThread:
             ok, img = cap.read()
             ts = time.perf_counter()
             if not ok or img is None:
-                self.read_failures += 1
                 time.sleep(0.01)
                 continue
             self.frames_read += 1
